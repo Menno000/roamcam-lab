@@ -68,6 +68,11 @@ lever is fresh orbit data, not remembered position.
 Extract the common parts — RAM frame buffer access, GPS/IMU reading, config storage, autostart, the
 web shell — once the second role exists and there is something real to share. Not before.
 
+The installer currently hard-codes the trip role's filenames rather than treating roles
+generically. Same reasoning: it gets generalised alongside the core, when there is a second role to
+generalise *against*. Changing the deployed filenames now would mean re-testing a working install
+on hardware for no gain.
+
 ### Wi-Fi
 
 Scan-first switching between the device's own access point and a home network, with a client-count
