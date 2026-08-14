@@ -1,0 +1,10 @@
+__pycache__/
+*.pyc
+*.log
+.DS_Store
+Thumbs.db
+
+# device output, never commit
+trips/
+*.mp4
+*.gpx
