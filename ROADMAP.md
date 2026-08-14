@@ -2,6 +2,10 @@
 
 Where each role stands and what it still needs. Nothing here is a promise with a date on it.
 
+> Looking for the wilder stuff? [docs/IDEAS.md](docs/IDEAS.md) collects what this hardware turns
+> out to be *capable* of — pre-impact footage from the RAM buffer, a USB webcam mode, recording to
+> a stick. This page is what we intend to build; that page is what is possible.
+
 ---
 
 ## 🚗 Trip — done

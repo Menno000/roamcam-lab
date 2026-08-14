@@ -36,6 +36,11 @@ Dat blijkt de betere afspraak:
 Het volledige uitzoekwerk aan de originele firmware — inclusief de valkuilen — staat in
 **[docs/VENDOR-FIRMWARE.md](docs/VENDOR-FIRMWARE.md)**. Bouw je zelf iets op zo'n camera, begin daar.
 
+En **[docs/IDEAS.md](docs/IDEAS.md)** verzamelt wat deze hardware blijkt te kunnen maar wat nog
+niemand gebouwd heeft — onder andere honderd seconden beeld van vóór een aanrijding, die de
+originele firmware al voor je in het geheugen bewaart. Niets op die pagina is gebouwd; per idee
+staat erbij wat we echt getest hebben en wat nog gok is.
+
 ---
 
 ## Rollen

@@ -37,6 +37,11 @@ The full write-up of how the stock firmware works — and the traps in it — is
 **[docs/VENDOR-FIRMWARE.md](docs/VENDOR-FIRMWARE.md)**. If you're building your own thing on one of
 these cameras, start there.
 
+And **[docs/IDEAS.md](docs/IDEAS.md)** is the pile of things this hardware turns out to be capable
+of that nobody has built yet — including a hundred seconds of pre-impact footage that the stock
+firmware is already keeping in RAM for you. Nothing on that page is implemented; it's marked
+per-item what we actually tested and what is still a guess.
+
 ---
 
 ## Roles
