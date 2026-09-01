@@ -117,6 +117,15 @@ built.
 
 ---
 
+## Not camera related
+
+- **[home-assistant/metaalprijzen](home-assistant/metaalprijzen/)** — a Home Assistant package and
+  dashboard that estimates what your scrap metal pays out: exchange prices per kilo, a chart of the
+  trend, and the value of your own pile. Nothing to do with the camera; it lives here because it
+  ends up in the same Home Assistant. Dutch only.
+
+---
+
 ## Related
 
 - **[Roamcam](https://github.com/Menno000/Roamcam)** — the same hardware as a straightforward

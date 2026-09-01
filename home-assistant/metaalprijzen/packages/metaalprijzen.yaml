@@ -1,0 +1,390 @@
+# Metaalprijzen — Home Assistant package
+#
+# Rekent uit wat je oud metaal ongeveer oplevert bij de schroothandel:
+#
+#     beursprijs (€/kg)  ×  uitbetalingsfactor (%)  ×  jouw kilo's  =  opbrengst
+#
+# Plaats dit bestand in <config>/packages/metaalprijzen.yaml en zet in
+# configuration.yaml:
+#
+#     homeassistant:
+#       packages: !include_dir_named packages
+#
+# En in secrets.yaml:
+#
+#     metals_dev_api_key: "jouw-sleutel"   # gratis account op metals.dev
+#
+# Geen API-sleutel? Laat het rest-blok hieronder weg en vul per metaal een
+# handmatige prijs in — de rest van het package werkt dan gewoon.
+#
+# Entity-ID's volgen uit de naam: "Beursprijs koper" -> sensor.beursprijs_koper.
+# Hernoem je een sensor, pas dan ook het dashboard aan.
+
+# ---------------------------------------------------------------------------
+# Beursprijzen (één API-call levert alle vier de metalen)
+# ---------------------------------------------------------------------------
+rest:
+  - resource: https://api.metals.dev/v1/latest
+    params:
+      api_key: !secret metals_dev_api_key
+      currency: EUR
+      unit: kg
+    scan_interval: 28800 # 3× per dag ≈ 90 calls/maand (gratis tier: 100)
+    sensor:
+      - name: "Beursprijs koper"
+        unique_id: metaalprijzen_beurs_koper
+        unit_of_measurement: "EUR/kg"
+        state_class: measurement
+        icon: mdi:chart-line
+        availability: "{{ value_json.status | default('') == 'success' }}"
+        value_template: >-
+          {% set m = value_json.metals %}
+          {{ (m.copper if m.copper is defined else m.lme_copper) | float(0) | round(3) }}
+
+      - name: "Beursprijs aluminium"
+        unique_id: metaalprijzen_beurs_aluminium
+        unit_of_measurement: "EUR/kg"
+        state_class: measurement
+        icon: mdi:chart-line
+        availability: "{{ value_json.status | default('') == 'success' }}"
+        value_template: >-
+          {% set m = value_json.metals %}
+          {{ (m.aluminum if m.aluminum is defined else m.lme_aluminum) | float(0) | round(3) }}
+
+      - name: "Beursprijs lood"
+        unique_id: metaalprijzen_beurs_lood
+        unit_of_measurement: "EUR/kg"
+        state_class: measurement
+        icon: mdi:chart-line
+        availability: "{{ value_json.status | default('') == 'success' }}"
+        value_template: >-
+          {% set m = value_json.metals %}
+          {{ (m.lead if m.lead is defined else m.lme_lead) | float(0) | round(3) }}
+
+      - name: "Beursprijs zink"
+        unique_id: metaalprijzen_beurs_zink
+        unit_of_measurement: "EUR/kg"
+        state_class: measurement
+        icon: mdi:chart-line
+        availability: "{{ value_json.status | default('') == 'success' }}"
+        value_template: >-
+          {% set m = value_json.metals %}
+          {{ (m.zinc if m.zinc is defined else m.lme_zinc) | float(0) | round(3) }}
+
+# ---------------------------------------------------------------------------
+# Wat heb je liggen, en wat betaalt jouw handelaar ervoor
+# ---------------------------------------------------------------------------
+input_number:
+  # -- kilo's ---------------------------------------------------------------
+  metaal_koper_kg: &kg
+    name: "Koper (kg)"
+    min: 0
+    max: 5000
+    step: 0.1
+    unit_of_measurement: kg
+    mode: box
+    icon: mdi:weight-kilogram
+  metaal_messing_kg:
+    <<: *kg
+    name: "Messing (kg)"
+  metaal_aluminium_kg:
+    <<: *kg
+    name: "Aluminium (kg)"
+  metaal_lood_kg:
+    <<: *kg
+    name: "Lood (kg)"
+  metaal_zink_kg:
+    <<: *kg
+    name: "Zink (kg)"
+  metaal_rvs_kg:
+    <<: *kg
+    name: "RVS (kg)"
+  metaal_ijzer_kg:
+    <<: *kg
+    name: "IJzer / staal (kg)"
+  metaal_accu_kg:
+    <<: *kg
+    name: "Loodaccu's (kg)"
+
+  # -- uitbetalingsfactor: percentage van de beursprijs dat je écht krijgt ---
+  # Kalibreer deze op de prijslijst van je eigen handelaar; de startwaarden
+  # zijn schattingen, geen wet.
+  metaal_koper_factor: &factor
+    name: "Koper — factor"
+    min: 0
+    max: 100
+    step: 1
+    initial: 70
+    unit_of_measurement: "%"
+    mode: slider
+    icon: mdi:percent
+  metaal_messing_factor:
+    <<: *factor
+    name: "Messing — factor"
+    initial: 65
+  metaal_aluminium_factor:
+    <<: *factor
+    name: "Aluminium — factor"
+    initial: 50
+  metaal_lood_factor:
+    <<: *factor
+    name: "Lood — factor"
+    initial: 50
+  metaal_zink_factor:
+    <<: *factor
+    name: "Zink — factor"
+    initial: 40
+
+  # -- handmatige prijs: 0 = beursprijs × factor gebruiken ------------------
+  # Voor RVS, ijzer en accu's is dit de enige bron: die staan niet op de beurs.
+  metaal_koper_prijs_handmatig: &handprijs
+    name: "Koper — prijs handmatig"
+    min: 0
+    max: 100
+    step: 0.01
+    initial: 0
+    unit_of_measurement: "EUR/kg"
+    mode: box
+    icon: mdi:tag-text
+  metaal_messing_prijs_handmatig:
+    <<: *handprijs
+    name: "Messing — prijs handmatig"
+  metaal_aluminium_prijs_handmatig:
+    <<: *handprijs
+    name: "Aluminium — prijs handmatig"
+  metaal_lood_prijs_handmatig:
+    <<: *handprijs
+    name: "Lood — prijs handmatig"
+  metaal_zink_prijs_handmatig:
+    <<: *handprijs
+    name: "Zink — prijs handmatig"
+  metaal_rvs_prijs_handmatig:
+    <<: *handprijs
+    name: "RVS — prijs"
+    initial: 0.90
+  metaal_ijzer_prijs_handmatig:
+    <<: *handprijs
+    name: "IJzer / staal — prijs"
+    initial: 0.14
+  metaal_accu_prijs_handmatig:
+    <<: *handprijs
+    name: "Loodaccu's — prijs"
+    initial: 0.55
+
+# ---------------------------------------------------------------------------
+# Inkoopprijzen en opbrengst
+# ---------------------------------------------------------------------------
+template:
+  - sensor:
+      # Messing staat niet als losse notering op de beurs. Gewoon messing is
+      # ruwweg 60% koper en 40% zink; die mix is de rekenbasis.
+      - name: "Beursprijs messing"
+        unique_id: metaalprijzen_beurs_messing
+        unit_of_measurement: "EUR/kg"
+        state_class: measurement
+        icon: mdi:chart-line
+        availability: >-
+          {{ has_value('sensor.beursprijs_koper') and has_value('sensor.beursprijs_zink') }}
+        state: >-
+          {{ (0.60 * states('sensor.beursprijs_koper') | float(0)
+              + 0.40 * states('sensor.beursprijs_zink') | float(0)) | round(3) }}
+
+      # -- inkoopprijs: wat je per kilo in handen krijgt ---------------------
+      - name: "Inkoopprijs koper"
+        unique_id: metaalprijzen_inkoop_koper
+        unit_of_measurement: "EUR/kg"
+        state_class: measurement
+        icon: mdi:cash
+        state: >-
+          {% set hand = states('input_number.metaal_koper_prijs_handmatig') | float(0) %}
+          {% set beurs = states('sensor.beursprijs_koper') | float(0) %}
+          {% set factor = states('input_number.metaal_koper_factor') | float(0) / 100 %}
+          {{ (hand if hand > 0 else beurs * factor) | round(3) }}
+
+      - name: "Inkoopprijs messing"
+        unique_id: metaalprijzen_inkoop_messing
+        unit_of_measurement: "EUR/kg"
+        state_class: measurement
+        icon: mdi:cash
+        state: >-
+          {% set hand = states('input_number.metaal_messing_prijs_handmatig') | float(0) %}
+          {% set beurs = states('sensor.beursprijs_messing') | float(0) %}
+          {% set factor = states('input_number.metaal_messing_factor') | float(0) / 100 %}
+          {{ (hand if hand > 0 else beurs * factor) | round(3) }}
+
+      - name: "Inkoopprijs aluminium"
+        unique_id: metaalprijzen_inkoop_aluminium
+        unit_of_measurement: "EUR/kg"
+        state_class: measurement
+        icon: mdi:cash
+        state: >-
+          {% set hand = states('input_number.metaal_aluminium_prijs_handmatig') | float(0) %}
+          {% set beurs = states('sensor.beursprijs_aluminium') | float(0) %}
+          {% set factor = states('input_number.metaal_aluminium_factor') | float(0) / 100 %}
+          {{ (hand if hand > 0 else beurs * factor) | round(3) }}
+
+      - name: "Inkoopprijs lood"
+        unique_id: metaalprijzen_inkoop_lood
+        unit_of_measurement: "EUR/kg"
+        state_class: measurement
+        icon: mdi:cash
+        state: >-
+          {% set hand = states('input_number.metaal_lood_prijs_handmatig') | float(0) %}
+          {% set beurs = states('sensor.beursprijs_lood') | float(0) %}
+          {% set factor = states('input_number.metaal_lood_factor') | float(0) / 100 %}
+          {{ (hand if hand > 0 else beurs * factor) | round(3) }}
+
+      - name: "Inkoopprijs zink"
+        unique_id: metaalprijzen_inkoop_zink
+        unit_of_measurement: "EUR/kg"
+        state_class: measurement
+        icon: mdi:cash
+        state: >-
+          {% set hand = states('input_number.metaal_zink_prijs_handmatig') | float(0) %}
+          {% set beurs = states('sensor.beursprijs_zink') | float(0) %}
+          {% set factor = states('input_number.metaal_zink_factor') | float(0) / 100 %}
+          {{ (hand if hand > 0 else beurs * factor) | round(3) }}
+
+      - name: "Inkoopprijs rvs"
+        unique_id: metaalprijzen_inkoop_rvs
+        unit_of_measurement: "EUR/kg"
+        state_class: measurement
+        icon: mdi:cash
+        state: "{{ states('input_number.metaal_rvs_prijs_handmatig') | float(0) | round(3) }}"
+
+      - name: "Inkoopprijs ijzer"
+        unique_id: metaalprijzen_inkoop_ijzer
+        unit_of_measurement: "EUR/kg"
+        state_class: measurement
+        icon: mdi:cash
+        state: "{{ states('input_number.metaal_ijzer_prijs_handmatig') | float(0) | round(3) }}"
+
+      - name: "Inkoopprijs accu"
+        unique_id: metaalprijzen_inkoop_accu
+        unit_of_measurement: "EUR/kg"
+        state_class: measurement
+        icon: mdi:cash
+        state: "{{ states('input_number.metaal_accu_prijs_handmatig') | float(0) | round(3) }}"
+
+      # -- opbrengst per metaal: kilo's × inkoopprijs ------------------------
+      - name: "Opbrengst koper"
+        unique_id: metaalprijzen_opbrengst_koper
+        unit_of_measurement: EUR
+        device_class: monetary
+        state_class: total
+        icon: mdi:cash-multiple
+        state: >-
+          {{ (states('input_number.metaal_koper_kg') | float(0)
+              * states('sensor.inkoopprijs_koper') | float(0)) | round(2) }}
+
+      - name: "Opbrengst messing"
+        unique_id: metaalprijzen_opbrengst_messing
+        unit_of_measurement: EUR
+        device_class: monetary
+        state_class: total
+        icon: mdi:cash-multiple
+        state: >-
+          {{ (states('input_number.metaal_messing_kg') | float(0)
+              * states('sensor.inkoopprijs_messing') | float(0)) | round(2) }}
+
+      - name: "Opbrengst aluminium"
+        unique_id: metaalprijzen_opbrengst_aluminium
+        unit_of_measurement: EUR
+        device_class: monetary
+        state_class: total
+        icon: mdi:cash-multiple
+        state: >-
+          {{ (states('input_number.metaal_aluminium_kg') | float(0)
+              * states('sensor.inkoopprijs_aluminium') | float(0)) | round(2) }}
+
+      - name: "Opbrengst lood"
+        unique_id: metaalprijzen_opbrengst_lood
+        unit_of_measurement: EUR
+        device_class: monetary
+        state_class: total
+        icon: mdi:cash-multiple
+        state: >-
+          {{ (states('input_number.metaal_lood_kg') | float(0)
+              * states('sensor.inkoopprijs_lood') | float(0)) | round(2) }}
+
+      - name: "Opbrengst zink"
+        unique_id: metaalprijzen_opbrengst_zink
+        unit_of_measurement: EUR
+        device_class: monetary
+        state_class: total
+        icon: mdi:cash-multiple
+        state: >-
+          {{ (states('input_number.metaal_zink_kg') | float(0)
+              * states('sensor.inkoopprijs_zink') | float(0)) | round(2) }}
+
+      - name: "Opbrengst rvs"
+        unique_id: metaalprijzen_opbrengst_rvs
+        unit_of_measurement: EUR
+        device_class: monetary
+        state_class: total
+        icon: mdi:cash-multiple
+        state: >-
+          {{ (states('input_number.metaal_rvs_kg') | float(0)
+              * states('sensor.inkoopprijs_rvs') | float(0)) | round(2) }}
+
+      - name: "Opbrengst ijzer"
+        unique_id: metaalprijzen_opbrengst_ijzer
+        unit_of_measurement: EUR
+        device_class: monetary
+        state_class: total
+        icon: mdi:cash-multiple
+        state: >-
+          {{ (states('input_number.metaal_ijzer_kg') | float(0)
+              * states('sensor.inkoopprijs_ijzer') | float(0)) | round(2) }}
+
+      - name: "Opbrengst accu"
+        unique_id: metaalprijzen_opbrengst_accu
+        unit_of_measurement: EUR
+        device_class: monetary
+        state_class: total
+        icon: mdi:cash-multiple
+        state: >-
+          {{ (states('input_number.metaal_accu_kg') | float(0)
+              * states('sensor.inkoopprijs_accu') | float(0)) | round(2) }}
+
+      # -- totalen ----------------------------------------------------------
+      - name: "Metaal opbrengst totaal"
+        unique_id: metaalprijzen_opbrengst_totaal
+        unit_of_measurement: EUR
+        device_class: monetary
+        state_class: total
+        icon: mdi:cash-check
+        state: >-
+          {% set metalen = ['koper', 'messing', 'aluminium', 'lood', 'zink',
+                            'rvs', 'ijzer', 'accu'] %}
+          {% set ns = namespace(totaal=0) %}
+          {% for m in metalen %}
+            {% set ns.totaal = ns.totaal + states('sensor.opbrengst_' ~ m) | float(0) %}
+          {% endfor %}
+          {{ ns.totaal | round(2) }}
+        attributes:
+          duurste_partij: >-
+            {% set metalen = ['koper', 'messing', 'aluminium', 'lood', 'zink',
+                              'rvs', 'ijzer', 'accu'] %}
+            {% set ns = namespace(naam='geen', waarde=0) %}
+            {% for m in metalen %}
+              {% set w = states('sensor.opbrengst_' ~ m) | float(0) %}
+              {% if w > ns.waarde %}{% set ns.waarde = w %}{% set ns.naam = m %}{% endif %}
+            {% endfor %}
+            {{ ns.naam }}
+
+      - name: "Metaal gewicht totaal"
+        unique_id: metaalprijzen_gewicht_totaal
+        unit_of_measurement: kg
+        device_class: weight
+        state_class: measurement
+        icon: mdi:weight
+        state: >-
+          {% set metalen = ['koper', 'messing', 'aluminium', 'lood', 'zink',
+                            'rvs', 'ijzer', 'accu'] %}
+          {% set ns = namespace(totaal=0) %}
+          {% for m in metalen %}
+            {% set ns.totaal = ns.totaal
+               + states('input_number.metaal_' ~ m ~ '_kg') | float(0) %}
+          {% endfor %}
+          {{ ns.totaal | round(1) }}

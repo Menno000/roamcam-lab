@@ -1,0 +1,304 @@
+# Dashboard "Metaal" — versie met grafieken (vereist apexcharts-card via HACS)
+#
+# Plakken via Instellingen → Dashboards → nieuw dashboard → ⋮ → "Onbewerkte
+# configuratie-editor". Dit bestand is de hele dashboardconfiguratie; wil je er
+# alleen een tabblad van maken, neem dan enkel het blok onder `views:` over.
+#
+# Kleuren: acht vaste tinten, één per metaal, in elke grafiek dezelfde.
+# Deze set is gecontroleerd op kleurenblindheid (adjacent-paren, lichte
+# achtergrond). Op een donker thema staan de tegenhangers in de README.
+
+views:
+  - title: Metaal
+    path: metaal
+    icon: mdi:gold
+    cards:
+      # -------------------------------------------------- wat levert het op
+      - type: grid
+        columns: 2
+        square: false
+        cards:
+          - type: tile
+            entity: sensor.metaal_opbrengst_totaal
+            name: Geschatte opbrengst
+            icon: mdi:cash-check
+          - type: tile
+            entity: sensor.metaal_gewicht_totaal
+            name: Totaal gewicht
+            icon: mdi:weight
+          - type: tile
+            entity: sensor.inkoopprijs_koper
+            name: Koper per kilo
+            icon: mdi:cash
+          - type: tile
+            entity: sensor.beursprijs_koper
+            name: Koper op de beurs
+            icon: mdi:chart-line
+
+      # -------------------------------------------------- prijsverloop
+      - type: custom:apexcharts-card
+        header:
+          show: true
+          title: Inkoopprijs non-ferro (€/kg, 30 dagen)
+          show_states: true
+          colorize_states: true
+        graph_span: 30d
+        span:
+          end: day
+        apex_config:
+          chart:
+            height: 320
+          legend:
+            show: true
+            position: bottom
+          tooltip:
+            shared: true
+          yaxis:
+            decimalsInFloat: 2
+        series:
+          - entity: sensor.inkoopprijs_koper
+            name: Koper
+            color: "#2a78d6"
+            stroke_width: 2
+            float_precision: 2
+            group_by:
+              func: last
+              duration: 6h
+          - entity: sensor.inkoopprijs_messing
+            name: Messing
+            color: "#eb6834"
+            stroke_width: 2
+            float_precision: 2
+            group_by:
+              func: last
+              duration: 6h
+          - entity: sensor.inkoopprijs_aluminium
+            name: Aluminium
+            color: "#1baf7a"
+            stroke_width: 2
+            float_precision: 2
+            group_by:
+              func: last
+              duration: 6h
+          - entity: sensor.inkoopprijs_lood
+            name: Lood
+            color: "#eda100"
+            stroke_width: 2
+            float_precision: 2
+            group_by:
+              func: last
+              duration: 6h
+          - entity: sensor.inkoopprijs_zink
+            name: Zink
+            color: "#e87ba4"
+            stroke_width: 2
+            float_precision: 2
+            group_by:
+              func: last
+              duration: 6h
+
+      # Aparte grafiek: deze drie liggen rond een tientje per honderd kilo en
+      # zouden in de grafiek hierboven plat tegen de nullijn liggen.
+      - type: custom:apexcharts-card
+        header:
+          show: true
+          title: Inkoopprijs RVS, ijzer en accu's (€/kg, 30 dagen)
+          show_states: true
+          colorize_states: true
+        graph_span: 30d
+        span:
+          end: day
+        apex_config:
+          chart:
+            height: 260
+          legend:
+            show: true
+            position: bottom
+          tooltip:
+            shared: true
+          yaxis:
+            decimalsInFloat: 2
+        series:
+          - entity: sensor.inkoopprijs_rvs
+            name: RVS
+            color: "#008300"
+            stroke_width: 2
+            float_precision: 2
+            group_by:
+              func: last
+              duration: 6h
+          - entity: sensor.inkoopprijs_ijzer
+            name: IJzer / staal
+            color: "#4a3aa7"
+            stroke_width: 2
+            float_precision: 2
+            group_by:
+              func: last
+              duration: 6h
+          - entity: sensor.inkoopprijs_accu
+            name: Loodaccu's
+            color: "#e34948"
+            stroke_width: 2
+            float_precision: 2
+            group_by:
+              func: last
+              duration: 6h
+
+      # -------------------------------------------------- opbrengst in de tijd
+      - type: custom:apexcharts-card
+        header:
+          show: true
+          title: Wat de stapel waard is (€, 30 dagen)
+          show_states: true
+        graph_span: 30d
+        span:
+          end: day
+        apex_config:
+          chart:
+            height: 260
+          legend:
+            show: false
+          tooltip:
+            shared: true
+          yaxis:
+            decimalsInFloat: 0
+        series:
+          - entity: sensor.metaal_opbrengst_totaal
+            name: Totaal
+            type: area
+            color: "#2a78d6"
+            opacity: 0.15
+            stroke_width: 2
+            float_precision: 2
+            group_by:
+              func: last
+              duration: 6h
+
+      # -------------------------------------------------- verdeling
+      - type: custom:apexcharts-card
+        chart_type: donut
+        header:
+          show: true
+          title: Waarde per metaal (nu)
+        apex_config:
+          chart:
+            height: 320
+          legend:
+            show: true
+            position: bottom
+          dataLabels:
+            enabled: true
+          colors:
+            - "#2a78d6"
+            - "#eb6834"
+            - "#1baf7a"
+            - "#eda100"
+            - "#e87ba4"
+            - "#008300"
+            - "#4a3aa7"
+            - "#e34948"
+        series:
+          - entity: sensor.opbrengst_koper
+            name: Koper
+          - entity: sensor.opbrengst_messing
+            name: Messing
+          - entity: sensor.opbrengst_aluminium
+            name: Aluminium
+          - entity: sensor.opbrengst_lood
+            name: Lood
+          - entity: sensor.opbrengst_zink
+            name: Zink
+          - entity: sensor.opbrengst_rvs
+            name: RVS
+          - entity: sensor.opbrengst_ijzer
+            name: IJzer / staal
+          - entity: sensor.opbrengst_accu
+            name: Loodaccu's
+
+      # -------------------------------------------------- invoer en tabel
+      - type: entities
+        title: Wat heb ik liggen
+        icon: mdi:scale
+        entities:
+          - entity: input_number.metaal_koper_kg
+            name: Koper
+          - entity: input_number.metaal_messing_kg
+            name: Messing
+          - entity: input_number.metaal_aluminium_kg
+            name: Aluminium
+          - entity: input_number.metaal_lood_kg
+            name: Lood
+          - entity: input_number.metaal_zink_kg
+            name: Zink
+          - entity: input_number.metaal_rvs_kg
+            name: RVS
+          - entity: input_number.metaal_ijzer_kg
+            name: IJzer / staal
+          - entity: input_number.metaal_accu_kg
+            name: Loodaccu's
+          - type: divider
+          - entity: sensor.metaal_gewicht_totaal
+            name: Totaal
+
+      - type: entities
+        title: Prijs en opbrengst per metaal
+        icon: mdi:table
+        entities:
+          - entity: sensor.opbrengst_koper
+            name: Koper
+            secondary_info: last-changed
+          - entity: sensor.opbrengst_messing
+            name: Messing
+          - entity: sensor.opbrengst_aluminium
+            name: Aluminium
+          - entity: sensor.opbrengst_lood
+            name: Lood
+          - entity: sensor.opbrengst_zink
+            name: Zink
+          - entity: sensor.opbrengst_rvs
+            name: RVS
+          - entity: sensor.opbrengst_ijzer
+            name: IJzer / staal
+          - entity: sensor.opbrengst_accu
+            name: Loodaccu's
+          - type: divider
+          - entity: sensor.metaal_opbrengst_totaal
+            name: Totaal
+
+      - type: entities
+        title: Instellingen — uitbetaling en handmatige prijzen
+        icon: mdi:tune
+        show_header_toggle: false
+        entities:
+          - type: section
+            label: Percentage van de beursprijs dat je krijgt
+          - entity: input_number.metaal_koper_factor
+            name: Koper
+          - entity: input_number.metaal_messing_factor
+            name: Messing
+          - entity: input_number.metaal_aluminium_factor
+            name: Aluminium
+          - entity: input_number.metaal_lood_factor
+            name: Lood
+          - entity: input_number.metaal_zink_factor
+            name: Zink
+          - type: section
+            label: Vaste prijs per kilo (0 = beursprijs × percentage)
+          - entity: input_number.metaal_koper_prijs_handmatig
+            name: Koper
+          - entity: input_number.metaal_messing_prijs_handmatig
+            name: Messing
+          - entity: input_number.metaal_aluminium_prijs_handmatig
+            name: Aluminium
+          - entity: input_number.metaal_lood_prijs_handmatig
+            name: Lood
+          - entity: input_number.metaal_zink_prijs_handmatig
+            name: Zink
+          - type: section
+            label: Niet op de beurs — altijd handmatig
+          - entity: input_number.metaal_rvs_prijs_handmatig
+            name: RVS
+          - entity: input_number.metaal_ijzer_prijs_handmatig
+            name: IJzer / staal
+          - entity: input_number.metaal_accu_prijs_handmatig
+            name: Loodaccu's

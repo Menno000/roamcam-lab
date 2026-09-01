@@ -116,6 +116,15 @@ maar nog niet gebouwd.
 
 ---
 
+## Los van de camera
+
+- **[home-assistant/metaalprijzen](home-assistant/metaalprijzen/)** — een Home Assistant package
+  met dashboard dat laat zien wat je oud metaal ongeveer oplevert bij de schroothandel:
+  beursprijzen per kilo, een grafiek van het verloop, en de opbrengst van je eigen stapel. Heeft
+  niets met de camera te maken; staat hier omdat het in dezelfde Home Assistant terechtkomt.
+
+---
+
 ## Verwant
 
 - **[Roamcam](https://github.com/Menno000/Roamcam)** — dezelfde hardware als gewone privé dashcam.
