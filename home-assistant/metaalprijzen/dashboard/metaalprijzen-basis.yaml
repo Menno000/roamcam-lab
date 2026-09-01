@@ -1,0 +1,170 @@
+# Dashboard "Metaal" — versie zonder HACS
+#
+# Zelfde gegevens als metaalprijzen.yaml, maar met de grafiekkaarten die al in
+# Home Assistant zitten. Minder mooi, geen kleur per metaal (dat kiest de
+# history-graph zelf), en er is geen taartdiagram — maar niets te installeren.
+#
+# statistics-graph werkt pas als er langetermijnstatistiek is opgebouwd; de
+# eerste dag na installatie is die grafiek nog leeg. history-graph laat meteen
+# iets zien.
+
+views:
+  - title: Metaal
+    path: metaal
+    icon: mdi:gold
+    cards:
+      - type: grid
+        columns: 2
+        square: false
+        cards:
+          - type: tile
+            entity: sensor.metaal_opbrengst_totaal
+            name: Geschatte opbrengst
+            icon: mdi:cash-check
+          - type: tile
+            entity: sensor.metaal_gewicht_totaal
+            name: Totaal gewicht
+            icon: mdi:weight
+          - type: tile
+            entity: sensor.inkoopprijs_koper
+            name: Koper per kilo
+            icon: mdi:cash
+          - type: tile
+            entity: sensor.beursprijs_koper
+            name: Koper op de beurs
+            icon: mdi:chart-line
+
+      - type: history-graph
+        title: Inkoopprijs non-ferro (€/kg)
+        hours_to_show: 720
+        entities:
+          - entity: sensor.inkoopprijs_koper
+            name: Koper
+          - entity: sensor.inkoopprijs_messing
+            name: Messing
+          - entity: sensor.inkoopprijs_aluminium
+            name: Aluminium
+          - entity: sensor.inkoopprijs_lood
+            name: Lood
+          - entity: sensor.inkoopprijs_zink
+            name: Zink
+
+      # Apart, omdat deze drie in de grafiek hierboven plat tegen de nullijn
+      # zouden liggen.
+      - type: history-graph
+        title: Inkoopprijs RVS, ijzer en accu's (€/kg)
+        hours_to_show: 720
+        entities:
+          - entity: sensor.inkoopprijs_rvs
+            name: RVS
+          - entity: sensor.inkoopprijs_ijzer
+            name: IJzer / staal
+          - entity: sensor.inkoopprijs_accu
+            name: Loodaccu's
+
+      - type: statistics-graph
+        title: Beursprijzen per dag (€/kg)
+        chart_type: line
+        period: day
+        days_to_show: 90
+        stat_types:
+          - mean
+        entities:
+          - sensor.beursprijs_koper
+          - sensor.beursprijs_messing
+          - sensor.beursprijs_aluminium
+          - sensor.beursprijs_lood
+          - sensor.beursprijs_zink
+
+      - type: history-graph
+        title: Wat de stapel waard is (€)
+        hours_to_show: 720
+        entities:
+          - entity: sensor.metaal_opbrengst_totaal
+            name: Totaal
+
+      - type: entities
+        title: Wat heb ik liggen
+        icon: mdi:scale
+        entities:
+          - entity: input_number.metaal_koper_kg
+            name: Koper
+          - entity: input_number.metaal_messing_kg
+            name: Messing
+          - entity: input_number.metaal_aluminium_kg
+            name: Aluminium
+          - entity: input_number.metaal_lood_kg
+            name: Lood
+          - entity: input_number.metaal_zink_kg
+            name: Zink
+          - entity: input_number.metaal_rvs_kg
+            name: RVS
+          - entity: input_number.metaal_ijzer_kg
+            name: IJzer / staal
+          - entity: input_number.metaal_accu_kg
+            name: Loodaccu's
+          - type: divider
+          - entity: sensor.metaal_gewicht_totaal
+            name: Totaal
+
+      - type: entities
+        title: Opbrengst per metaal
+        icon: mdi:table
+        entities:
+          - entity: sensor.opbrengst_koper
+            name: Koper
+          - entity: sensor.opbrengst_messing
+            name: Messing
+          - entity: sensor.opbrengst_aluminium
+            name: Aluminium
+          - entity: sensor.opbrengst_lood
+            name: Lood
+          - entity: sensor.opbrengst_zink
+            name: Zink
+          - entity: sensor.opbrengst_rvs
+            name: RVS
+          - entity: sensor.opbrengst_ijzer
+            name: IJzer / staal
+          - entity: sensor.opbrengst_accu
+            name: Loodaccu's
+          - type: divider
+          - entity: sensor.metaal_opbrengst_totaal
+            name: Totaal
+
+      - type: entities
+        title: Instellingen — uitbetaling en handmatige prijzen
+        icon: mdi:tune
+        show_header_toggle: false
+        entities:
+          - type: section
+            label: Percentage van de beursprijs dat je krijgt
+          - entity: input_number.metaal_koper_factor
+            name: Koper
+          - entity: input_number.metaal_messing_factor
+            name: Messing
+          - entity: input_number.metaal_aluminium_factor
+            name: Aluminium
+          - entity: input_number.metaal_lood_factor
+            name: Lood
+          - entity: input_number.metaal_zink_factor
+            name: Zink
+          - type: section
+            label: Vaste prijs per kilo (0 = beursprijs × percentage)
+          - entity: input_number.metaal_koper_prijs_handmatig
+            name: Koper
+          - entity: input_number.metaal_messing_prijs_handmatig
+            name: Messing
+          - entity: input_number.metaal_aluminium_prijs_handmatig
+            name: Aluminium
+          - entity: input_number.metaal_lood_prijs_handmatig
+            name: Lood
+          - entity: input_number.metaal_zink_prijs_handmatig
+            name: Zink
+          - type: section
+            label: Niet op de beurs — altijd handmatig
+          - entity: input_number.metaal_rvs_prijs_handmatig
+            name: RVS
+          - entity: input_number.metaal_ijzer_prijs_handmatig
+            name: IJzer / staal
+          - entity: input_number.metaal_accu_prijs_handmatig
+            name: Loodaccu's
