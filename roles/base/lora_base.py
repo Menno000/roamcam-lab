@@ -502,8 +502,10 @@ class Station:
                                      "best_rssi": rssi, "freqs": [], "sfs": []}
         d.update(last=now, rssi=rssi, snr=snr, kind=kind, net=net)
         d["count"] += 1
-        if rssi is not None and (d.get("best_rssi") is None or rssi > d["best_rssi"]):
+        if rssi is not None and (d.get("best_rssi") is None or rssi >= d["best_rssi"]):
             d["best_rssi"] = rssi
+            if GP.has_fix():                        # waar het apparaat het sterkst binnenkwam
+                d["lat"], d["lon"] = round(GP.fix["lat"], 5), round(GP.fix["lon"], 5)
         if f not in d["freqs"]:
             d["freqs"].append(f)
         if sf not in d["sfs"]:

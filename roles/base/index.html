@@ -98,7 +98,7 @@ canvas{width:100%;height:220px;display:block}
   </div>
   <div class="stat" id="range-stats"></div>
   <div id="rmap"></div>
-  <div class="note" id="rmap-note">Punten: groen sterk (≥ -90 dBm), oranje matig, rood zwak (&lt; -110 dBm), grijs = geen antwoord. De kaart heeft internet nodig; zonder internet blijft de tabel werken.</div>
+  <div class="note" id="rmap-note">Punten: groen sterk (≥ -90 dBm), oranje matig, rood zwak (&lt; -110 dBm), grijs = geen antwoord, paars = gevonden LoRa-apparaat (op de plek waar het het sterkst binnenkwam). De kaart heeft internet nodig; zonder internet blijft de tabel werken.</div>
   <div class="tbl" style="margin-top:8px;max-height:300px"><table>
     <thead><tr><th>tijd</th><th>kant</th><th>resultaat</th><th>afstand</th><th>RSSI hier / daar</th><th>SNR hier / daar</th><th>snelheid</th><th>SF/BW/dBm</th></tr></thead>
     <tbody id="rtab"></tbody>
@@ -385,6 +385,9 @@ function renderRange() {
   const pts = own.filter(r => r.lat != null);
   for (const r of pts) L.circleMarker([r.lat, r.lon], {radius: 5, color: rCol(r), fillColor: rCol(r), fillOpacity: .85, weight: 1})
     .bindTooltip(`${fmtT(r.time)} · ${r.ok ? 'ok' : 'geen antwoord'} · ${fmtD(dist(r))}<br>RSSI ${r.side === 'basis' ? r.rssi : (r.rssi_here ?? '–') + ' / ' + (r.rssi_there ?? '–')}`).addTo(rLayer);
+  for (const d of (S.devices || []).filter(d => d.lat != null && !String(d.key).startsWith('eigen')))
+    L.circleMarker([d.lat, d.lon], {radius: 7, color: '#8e44ad', fillColor: '#8e44ad', fillOpacity: .35, weight: 2})
+      .bindTooltip(`${esc(d.key)}<br>${esc(d.kind)} · ${d.count}× · sterkst ${d.best_rssi} dBm (hier)`).addTo(rLayer);
   if (bp) L.marker(bp).bindTooltip('basis').addTo(rLayer);
   if (!rFit && pts.length > 1) { rMap.fitBounds(L.latLngBounds(pts.map(r => [r.lat, r.lon]).concat(bp ? [bp] : [])), {padding: [20, 20]}); rFit = true; }
 }
