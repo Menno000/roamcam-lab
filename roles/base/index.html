@@ -199,7 +199,11 @@ canvas{width:100%;height:220px;display:block}
 <section class="wide">
   <h2>Apparaten in de buurt</h2>
   <div class="row" style="margin-top:0">
-    <button id="btn-scan2" onclick="toggleSniff()">Scanner aan</button>
+    <label>Modus<select id="modesel" onchange="setMode(this.value)">
+      <option value="link">Eigen link (alleen eigen kanaal)</option>
+      <option value="combi">Combi: eigen link + scanner</option>
+      <option value="sniff">Alleen scanner (zendt niet)</option>
+    </select></label>
     <span class="note" id="scan-info"></span>
     <span style="flex:1"></span>
     <button class="sec" onclick="clearDevices()">Lijst wissen</button>
@@ -220,7 +224,7 @@ canvas{width:100%;height:220px;display:block}
 <section class="wide">
   <h2>Pakketten</h2>
   <div class="row" style="margin-top:0">
-    <button class="sec" id="btn-sniff" onclick="toggleSniff()">Scanner aan</button>
+    <span class="note">Modus kies je bij "Apparaten in de buurt".</span>
     <span class="note" id="sniff-cur"></span>
     <span style="flex:1"></span>
     <a class="note" href="/api/log">log downloaden</a>
@@ -284,7 +288,10 @@ async function applyPreset() { const res = await post('/api/preset', {name: $('p
 async function ping() { await post('/api/ping', {dst: $('dst').value}, 'Ping verzonden'); }
 async function sendText() { if (!$('msg').value) return; await post('/api/send', {text: $('msg').value, dst: $('dst').value}, 'Bericht verzonden'); $('msg').value = ''; }
 async function sendRaw() { await post('/api/send', {hex: $('rawhex').value.replace(/\s/g, '')}, 'Rauwe bytes verzonden'); }
-async function toggleSniff() { const m = S.mode === 'sniff' ? 'link' : 'sniff'; await post('/api/mode', {mode: m}, m === 'sniff' ? 'Scanner aan: zoekt op alle LoRaWAN- en Meshtastic-kanalen' : 'Scanner uit, luistert alleen op het eigen kanaal'); }
+async function setMode(m) {
+  const msg = {link: 'Eigen link: luistert alleen op het eigen kanaal', combi: 'Combi: eigen kanaal bewaakt, scanner loopt tussendoor', sniff: 'Alleen scanner: zendt en antwoordt niet'};
+  await post('/api/mode', {mode: m}, msg[m]);
+}
 async function wifiScan() {
   $('wf-scan').disabled = true;
   try {
@@ -413,14 +420,16 @@ function render() {
   $('title').textContent = 'LoRa-basis · ' + (S.hostname || '');
   $('p-radio').textContent = r.error ? 'radio: fout' : 'radio OK'; $('p-radio').className = 'pill ' + (r.error ? 'bad' : 'ok');
   $('p-band').textContent = b ? `subband ${b.from}–${b.to} MHz` : 'buiten vrije subband'; $('p-band').className = 'pill ' + (b ? '' : 'warn');
-  const scanTxt = S.mode === 'sniff' ? 'Scanner uit' : 'Scanner aan';
-  $('btn-sniff').textContent = scanTxt; $('btn-scan2').textContent = scanTxt;
-  $('p-mode').textContent = S.mode === 'sniff' ? 'scanner' : 'eigen link';
+  if (document.activeElement !== $('modesel')) $('modesel').value = S.mode;
+  $('p-mode').textContent = {link: 'eigen link', sniff: 'scanner', combi: 'combi'}[S.mode] || S.mode;
   const ss = S.scan_stats;
-  $('sniff-cur').textContent = S.mode === 'sniff' ? 'nu: ' + (S.sniff_cur || '') : '';
+  $('sniff-cur').textContent = S.mode !== 'link' ? 'nu: ' + (S.sniff_cur || '') : '';
+  const cb = S.combi || {};
   $('scan-info').textContent = S.mode === 'sniff'
-    ? `${ss.targets} kanaal/SF-combinaties, ronde ${ss.pass_nr} duurt ${ss.pass_ms ?? '…'} ms · ${ss.cad} keer gekeken, ${ss.hits} keer iets gehoord · nu: ${S.sniff_cur || ''}`
-    : 'Scanner staat uit: alleen het eigen kanaal wordt beluisterd. Zenden kan alleen met de scanner uit.';
+    ? `${ss.targets} kanaal/SF-combinaties, ronde ${ss.pass_nr} duurt ${ss.pass_ms ?? '…'} ms · ${ss.cad} keer gekeken, ${ss.hits} keer iets gehoord`
+    : S.mode === 'combi'
+    ? `Eigen kanaal elke ${cb.gap_avg_ms ?? '…'} ms gecontroleerd (max ${cb.gap_max_ms} ms, moet onder ${cb.guard_ms} ms blijven${cb.late ? ', ' + cb.late + '× te laat' : ''}) · scanronde ${ss.pass_ms ?? '…'} ms · ${ss.hits} keer vreemd LoRa gehoord · ${cb.own_hits} eigen pakketten opgevangen`
+    : 'Scanner staat uit: alleen het eigen kanaal wordt beluisterd.';
   const ago = ts => { const s = Math.round(S.time - ts); return s < 60 ? s + ' s' : s < 3600 ? Math.round(s / 60) + ' min' : s < 86400 ? Math.round(s / 3600) + ' u' : Math.round(s / 86400) + ' d'; };
   $('dev').innerHTML = S.devices.length ? S.devices.map(d => {
     const det = Object.entries(d).filter(([k]) => ['fcnt','fport','join_eui','hop_limit','channel_hash','note','voorbeeld_hex','auth'].includes(k) && d[k] != null).map(([k, v]) => `${k}: ${esc(v)}`).join(' · ');

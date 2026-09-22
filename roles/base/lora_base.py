@@ -38,7 +38,7 @@ DEFAULTS = {
     "node_id": 1,                 # 1 = basis, 2.. = mobiele units
     "node_name": "basis",
     "freq_mhz": 869.525,          # g3-subband: 500 mW ERP en 10 % toegestaan
-    "sf": 9, "bw": 125, "cr": 1, "preamble": 16,
+    "sf": 9, "bw": 125, "cr": 1, "preamble": 32,   # 32: ruimte voor de combi-modus (zie _combi_step)
     "power_dbm": 14,
     "sync": 0x12,                 # privé-syncword: LoRaWAN (0x34) en Meshtastic (0x2B) horen ons niet
     "crc": True, "invert_iq": False,
@@ -50,6 +50,7 @@ DEFAULTS = {
     "range_test": False,          # bereiktest: elke range_interval_s een ping met GPS-positie
     "range_interval_s": 10,
     "range_dst": 1,
+    "range_retry": True,          # bij geen antwoord één keer direct opnieuw
     "led_fns": ["lora", "link", "systeem"],   # functie per LED (zie leds.FUNCTIONS)
     "led_brightness": 100,        # procent
     "led_night": True,            # 22-07 u Nederlandse tijd gedimd tot 20 %
@@ -69,9 +70,9 @@ EU_BANDS = [
 ]
 
 PRESETS = {
-    "eigen-lang": dict(freq_mhz=869.525, sf=12, bw=125, sync=0x12, invert_iq=False, preamble=16),
-    "eigen-standaard": dict(freq_mhz=869.525, sf=9, bw=125, sync=0x12, invert_iq=False, preamble=16),
-    "eigen-snel": dict(freq_mhz=869.525, sf=7, bw=250, sync=0x12, invert_iq=False, preamble=16),
+    "eigen-lang": dict(freq_mhz=869.525, sf=12, bw=125, sync=0x12, invert_iq=False, preamble=32),
+    "eigen-standaard": dict(freq_mhz=869.525, sf=9, bw=125, sync=0x12, invert_iq=False, preamble=32),
+    "eigen-snel": dict(freq_mhz=869.525, sf=7, bw=250, sync=0x12, invert_iq=False, preamble=32),
     "meshtastic-longfast": dict(freq_mhz=869.525, sf=11, bw=250, sync=0x2B, invert_iq=False, preamble=16),
     "meshtastic-mediumfast": dict(freq_mhz=869.525, sf=9, bw=250, sync=0x2B, invert_iq=False, preamble=16),
     "lorawan-868.1-sf7": dict(freq_mhz=868.1, sf=7, bw=125, sync=0x34, invert_iq=False, preamble=8),
@@ -207,6 +208,9 @@ class Station:
         self.scan_pass = 0
         self.scan_pos = 0
         self.scan_stats = {"cad": 0, "hits": 0, "pass_ms": None}
+        self.combi = {"own_checks": 0, "own_hits": 0, "gap_max_ms": 0, "gap_avg_ms": None, "guard_ms": None,
+                      "late": 0, "skipped": 0, "own_cost_ms": 8.0}
+        self._last_own = 0
         self._pass_t0 = time.monotonic()
         self.range_log = collections.deque(maxlen=20000)
         self.range_id = 0
@@ -307,6 +311,10 @@ class Station:
             if self.mode == "sniff":
                 self._scan_step()
                 continue
+            if self.mode == "combi":
+                self._combi_step()
+                self._range_tick(now)
+                continue
             p = r.read_packet()
             if p:
                 self._on_packet(p)
@@ -327,22 +335,81 @@ class Station:
     # --- scanner ----------------------------------------------------------
     def _scan_targets(self):
         c = self.cfg
+        if self.mode == "combi":
+            return SCAN_PLAN                       # het eigen kanaal bewaakt _combi_step zelf
         own = dict(net="eigen", f=c["freq_mhz"], sf=c["sf"], bw=c["bw"], sync=c["sync"], inv=c["invert_iq"], every=1)
         return SCAN_PLAN + [own]
 
-    def _scan_step(self):
-        """Eén doel: afstemmen, CAD, en bij een treffer het pakket ontvangen."""
+    def _combi_step(self):
+        """Eigen kanaal bewaken en tussendoor één scandoel.
+
+        Een pakket begint met `preamble` symbolen. Zolang de tijd tussen twee CAD's op het eigen
+        kanaal korter is dan die preamble (min de CAD zelf), wordt elk eigen pakket gezien. Wat er
+        tussen twee controles overblijft, gaat naar de scanner; te trage scandoelen slaan we over.
+        """
+        c = self.cfg
+        r = self.radio
+        sym_ms = (2 ** c["sf"]) / c["bw"]
+        guard = max(5.0, (c["preamble"] - SX1262.CAD_PARAMS[c["sf"]][0] - 2) * sym_ms)
+        self.combi["guard_ms"] = round(guard, 1)
+        t0 = time.monotonic()
+        if self._last_own:
+            gap = (t0 - self._last_own) * 1000
+            self.combi["gap_max_ms"] = max(self.combi["gap_max_ms"], round(gap, 1))
+            avg = self.combi["gap_avg_ms"]
+            self.combi["gap_avg_ms"] = round(gap if avg is None else 0.98 * avg + 0.02 * gap, 1)
+            if gap > guard:
+                self.combi["late"] += 1
+        self._last_own = t0
+        r.standby()
+        r.retune(c["freq_mhz"], c["sf"], c["bw"], c["sync"], c["invert_iq"], preamble=c["preamble"])
+        rx_ms = min(4000, airtime_ms(64, c["sf"], c["bw"], preamble=c["preamble"]) + 100)
+        self.combi["own_checks"] += 1
+        self.sniff_cur = "eigen kanaal"
+        if self._cad_once(rx_ms):
+            self.combi["own_hits"] += 1
+            deadline = time.monotonic() + rx_ms / 1000 + 0.2
+            flags = 0
+            while time.monotonic() < deadline:
+                flags = r.irq()
+                if flags & 0x0262:
+                    break
+                time.sleep(0.002)
+            p = r.read_packet() if flags & 0x0062 else None
+            r.clear_irq()
+            if p:
+                self._on_packet(p)
+            self._last_own = 0                      # na een ontvangst telt de volgende kloof niet mee
+            return
+        cost = (time.monotonic() - t0) * 1000
+        self.combi["own_cost_ms"] = round(0.9 * self.combi["own_cost_ms"] + 0.1 * cost, 2)
+        self._scan_step(budget_ms=guard - self.combi["own_cost_ms"] - 2)
+
+    def _scan_step(self, budget_ms=None):
+        """Eén doel: afstemmen, CAD, en bij een treffer het pakket ontvangen.
+        Met budget_ms (combi-modus) alleen een doel waarvan afstemmen + CAD binnen het budget past."""
         r = self.radio
         targets = self._scan_targets()
-        if self.scan_pos >= len(targets):
-            self.scan_pos = 0
-            self.scan_pass += 1
-            now = time.monotonic()
-            self.scan_stats["pass_ms"] = round((now - self._pass_t0) * 1000)
-            self._pass_t0 = now
-        t = targets[self.scan_pos]
-        self.scan_pos += 1
-        if self.scan_pass % t["every"]:
+        t = None
+        for _ in range(len(targets) + 1):
+            if self.scan_pos >= len(targets):
+                self.scan_pos = 0
+                self.scan_pass += 1
+                now = time.monotonic()
+                self.scan_stats["pass_ms"] = round((now - self._pass_t0) * 1000)
+                self._pass_t0 = now
+            cand = targets[self.scan_pos]
+            self.scan_pos += 1
+            if self.scan_pass % cand["every"]:
+                continue
+            if budget_ms is not None:
+                sym, _, _ = SX1262.CAD_PARAMS[cand["sf"]]
+                if sym * (2 ** cand["sf"]) / cand["bw"] + 6 > budget_ms:
+                    self.combi["skipped"] += 1
+                    continue
+            t = cand
+            break
+        if t is None:
             return
         ckey = "%.3f/SF%d/%g" % (t["f"], t["sf"], t["bw"])
         ch = self.chan.setdefault(ckey, {"net": t["net"], "f": t["f"], "sf": t["sf"], "bw": t["bw"],
@@ -493,6 +560,16 @@ class Station:
         for seq, rec in list(self.range_pending.items()):
             if now - rec["_t"] > max(3.0, 2.5 * rec["airtime_ms"] / 1000 + 1.5):
                 del self.range_pending[seq]
+                if c.get("range_retry", True) and rec.get("tries", 1) < 2:
+                    try:
+                        self._send(T_PING, int(c.get("range_dst", 1)), self._pos_payload(), auto=True)
+                        rec.update(tries=2, seq=self.seq, _t=now)
+                        self.range_pending[self.seq] = rec
+                        if self.mode == "link":
+                            self.radio.rx_continuous()
+                        continue
+                    except Exception as e:  # noqa: BLE001
+                        rec["error"] = str(e)
                 rec.pop("_t", None)
                 rec["ok"] = False
                 self._range_add(rec)
@@ -509,9 +586,10 @@ class Station:
             rec.update(ok=None, error=str(e))
             self._range_add(rec)
             return
-        rec.update(seq=self.seq, airtime_ms=tx["airtime_ms"], _t=now)
+        rec.update(seq=self.seq, airtime_ms=tx["airtime_ms"], _t=now, tries=1)
         self.range_pending[self.seq] = rec
-        self.radio.rx_continuous()
+        if self.mode == "link":
+            self.radio.rx_continuous()
 
     def _beacon_payload(self):
         up = int(time.monotonic() - self.started)
@@ -656,8 +734,11 @@ class Station:
 
     def _send_raw(self, data, **info):
         if self.mode == "sniff":
-            raise RuntimeError("zenden kan niet in sniffermodus")
+            raise RuntimeError("zenden kan niet in scannermodus (gebruik combi)")
         at = self.check_tx(len(data))
+        if self.mode == "combi":
+            self.radio.standby()
+            self.radio.configure(**self.radio_params())
         if ptype_is_ping(info):
             self.pending_pings[info["seq"]] = time.monotonic()
         LD.flash("tx")
@@ -720,9 +801,11 @@ class Station:
         def do():
             self.cfg.update(clean)
             self.save()
-            if self.mode == "link":
+            if self.mode in ("link", "combi"):
                 self.radio.standby()
                 self.radio.configure(**self.radio_params())
+                if self.mode == "link":
+                    self.radio.rx_continuous()
             return public_cfg(self.cfg)
         return self.call(do)
 
@@ -732,9 +815,12 @@ class Station:
             self.cfg["mode"] = mode
             self.save()
             self.radio.standby()
-            if mode == "link":
+            if mode in ("link", "combi"):
                 self.radio.configure(**self.radio_params())
+            if mode == "link":
                 self.radio.rx_continuous()
+            self._last_own = 0
+            self.combi.update(gap_max_ms=0, late=0, skipped=0, own_checks=0, own_hits=0)
             return mode
         return self.call(do)
 
@@ -773,7 +859,7 @@ class Station:
             "cfg": public_cfg(c), "band": self.band(), "duty_limit_pct": limit,
             "airtime_hour_ms": round(used, 1), "airtime_limit_ms": limit / 100 * 3600_000,
             "airtime_20b_ms": round(at1, 1), "mode": self.mode,
-            "sniff_cur": getattr(self, "sniff_cur", None),
+            "sniff_cur": getattr(self, "sniff_cur", None), "combi": self.combi,
             "radio": {"info": self.radio_info, "error": self.radio_error,
                       "rssi_now": self._rssi_safe()},
             "stats": dict(self.stats), "peers": list(self.peers.values()),
@@ -864,7 +950,8 @@ class Handler(BaseHTTPRequestHandler):
             elif p == "/api/preset":
                 res = ST.apply_config(PRESETS[req["name"]])
             elif p == "/api/mode":
-                res = ST.set_mode("sniff" if req.get("mode") == "sniff" else "link")
+                m = req.get("mode")
+                res = ST.set_mode(m if m in ("link", "sniff", "combi") else "link")
             elif p == "/api/send":
                 dst = int(req.get("dst", BROADCAST))
                 res = ST.send_raw_hex(req["hex"]) if req.get("hex") else ST.send_text(req.get("text", ""), dst)
