@@ -200,7 +200,7 @@ def build_nodeinfo(node_num, long_name, short_name, want_response=True, hop_limi
             + pb_varint(5, 255))                                   # hw_model PRIVATE_HW
     data = pb_varint(1, 4) + pb_bytes(2, user) + (pb_varint(3, 1) if want_response else b"")
     pid = struct.unpack("<I", os.urandom(4))[0] | 1
-    flags = (hop_limit & 7) | ((hop_limit & 7) << 5)
+    flags = (hop_limit & 7) | ((hop_limit & 7) << 5)            # hop_limit 0: alleen directe buren
     hdr = struct.pack("<IIIBBBB", BROADCAST, node_num, pid, flags, channel_hash(), 0, node_num & 0xFF)
     return hdr + aes_ctr(DEFAULT_KEY, nonce(pid, node_num), data), pid
 

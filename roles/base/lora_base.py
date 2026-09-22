@@ -33,6 +33,7 @@ CONFIG_FILE = os.path.join(BASE, "config.json")
 DEVICES_FILE = os.path.join(BASE, "apparaten.json")
 LOG_FILE = os.path.join(BASE, "pakketten.jsonl")
 RANGE_FILE = os.path.join(BASE, "bereik.jsonl")
+MESH_FILE = os.path.join(BASE, "meshtastic.jsonl")
 PORT = 8080
 
 DEFAULTS = {
@@ -52,6 +53,9 @@ DEFAULTS = {
     "range_interval_s": 10,
     "range_dst": 1,
     "range_retry": True,          # bij geen antwoord één keer direct opnieuw
+    "mesh_auto": False,           # automatisch "is er iemand?" op Meshtastic LongFast
+    "mesh_auto_interval_s": 30,
+    "mesh_auto_listen_s": 12,
     "led_fns": ["lora", "link", "systeem"],   # functie per LED (zie leds.FUNCTIONS)
     "led_brightness": 100,        # procent
     "led_night": True,            # 22-07 u Nederlandse tijd gedimd tot 20 %
@@ -212,6 +216,17 @@ class Station:
         self.combi = {"own_checks": 0, "own_hits": 0, "gap_max_ms": 0, "gap_avg_ms": None, "guard_ms": None,
                       "late": 0, "skipped": 0, "own_cost_ms": 8.0}
         self.probe = {"active": False, "results": [], "started": None, "until": None, "sent": 0, "error": None}
+        self.last_mesh_auto = 0
+        self.mesh_log = collections.deque(maxlen=5000)
+        try:
+            with open(MESH_FILE) as f:
+                for ln in f:
+                    try:
+                        self.mesh_log.append(json.loads(ln))
+                    except ValueError:
+                        pass
+        except OSError:
+            pass
         self._last_own = 0
         self._pass_t0 = time.monotonic()
         self.range_log = collections.deque(maxlen=20000)
@@ -312,6 +327,16 @@ class Station:
                 self._save_devices()
             if self.probe["active"]:
                 self._probe_step()
+                continue
+            c = self.cfg
+            if (self.mode != "sniff" and c.get("mesh_auto") and not self.range_pending
+                    and now - self.last_mesh_auto >= float(c.get("mesh_auto_interval_s", 30))):
+                self.last_mesh_auto = now
+                try:
+                    self._mesh_probe_start(int(c.get("mesh_auto_listen_s", 12)), hop_limit=0, auto=True)
+                except Exception as e:  # noqa: BLE001
+                    self.probe["error"] = str(e)
+                    self.stats["mesh_auto_overgeslagen"] += 1
                 continue
             if self.mode == "sniff":
                 self._scan_step()
@@ -610,13 +635,15 @@ class Station:
         """Zendt een NodeInfo met 'antwoord graag' op het openbare LongFast-kanaal en luistert daarna.
         Meshtastic-nodes in bereik sturen hun eigen NodeInfo terug; routers sturen het ook door."""
         listen_s = max(15, min(300, int(listen_s)))
+        return self.call(lambda: self._mesh_probe_start(listen_s, hop_limit=3, auto=False))
 
-        def start():
+    def _mesh_probe_start(self, listen_s, hop_limit=3, auto=False):
+        if True:
             c = self.cfg
             params = dict(mesh.RADIO, power_dbm=c["power_dbm"])
             b = band_for(params["freq_mhz"], params["bw"])
             pkt, pid = mesh.build_nodeinfo(self._mesh_node(), c.get("node_name") and "roamcam-" + c["node_name"] or "roamcam",
-                                           ("RC" + (c.get("node_name") or "x")[:2]).upper())
+                                           ("RC" + (c.get("node_name") or "x")[:2]).upper(), hop_limit=hop_limit)
             at = airtime_ms(len(pkt), params["sf"], params["bw"], params["cr"], params["preamble"], True)
             used = self.airtime_last_hour()
             if c.get("enforce_duty", True) and b and used + at > b["duty_pct"] / 100 * 3600_000:
@@ -633,10 +660,11 @@ class Station:
                              "text": "!%08x vraagt: is er iemand?" % self._mesh_node()})
             r.rx_continuous()
             now = time.time()
+            pos = GP.fix if GP.has_fix() else {}
             self.probe.update(active=True, results=[], started=now, until=now + listen_s, sent=1, error=None,
-                              pid=pid, node="!%08x" % self._mesh_node(), listen_s=listen_s)
+                              pid=pid, node="!%08x" % self._mesh_node(), listen_s=listen_s, auto=auto,
+                              hop_limit=hop_limit, lat=pos.get("lat"), lon=pos.get("lon"))
             return dict(self.probe)
-        return self.call(start)
 
     def _probe_step(self):
         r = self.radio
@@ -665,6 +693,19 @@ class Station:
             r.rx_continuous()
         if time.time() > self.probe["until"]:
             self.probe["active"] = False
+            pr = self.probe
+            heard = [x for x in pr["results"] if x.get("crc_ok") is not False and x.get("from")]
+            rec = {"time": pr["started"], "auto": pr.get("auto"), "hop_limit": pr.get("hop_limit"),
+                   "lat": pr.get("lat"), "lon": pr.get("lon"), "listen_s": pr.get("listen_s"),
+                   "heard": len(heard), "nodes": sorted({x["from"] for x in heard}),
+                   "names": sorted({(x.get("user") or {}).get("long") for x in heard if x.get("user")}),
+                   "best_rssi": max([x["rssi"] for x in heard], default=None)}
+            self.mesh_log.append(rec)
+            try:
+                with open(MESH_FILE, "a") as f:
+                    f.write(json.dumps(rec) + "\n")
+            except OSError:
+                pass
             r.standby()
             r.configure(**self.radio_params())
             if self.mode == "link":
@@ -942,6 +983,8 @@ class Station:
             "airtime_20b_ms": round(at1, 1), "mode": self.mode,
             "sniff_cur": getattr(self, "sniff_cur", None), "combi": self.combi,
             "mesh_probe": dict(self.probe, remaining_s=max(0, int((self.probe["until"] or 0) - time.time()))),
+            "mesh_summary": {"probes": len(self.mesh_log), "with_answer": sum(1 for m in self.mesh_log if m["heard"]),
+                             "nodes": sorted({n for m in self.mesh_log for n in m["nodes"]})},
             "radio": {"info": self.radio_info, "error": self.radio_error,
                       "rssi_now": self._rssi_safe()},
             "stats": dict(self.stats), "peers": list(self.peers.values()),
@@ -1005,6 +1048,8 @@ class Handler(BaseHTTPRequestHandler):
             if "since=" in self.path:
                 since = int(self.path.split("since=")[1].split("&")[0] or 0)
             self._json(ST.state(since))
+        elif self.path.startswith("/api/mesh/log"):
+            self._json(list(ST.mesh_log))
         elif self.path.startswith("/api/range"):
             since = int(self.path.split("since=")[1].split("&")[0] or 0) if "since=" in self.path else 0
             self._json([r for r in ST.range_log if r["id"] > since])

@@ -211,6 +211,8 @@ canvas{width:100%;height:220px;display:block}
   <div class="row">
     <button onclick="meshProbe()" id="mesh-btn">Meshtastic: is er iemand?</button>
     <label>luisteren (s)<input id="mesh-s" type="number" value="60" min="15" max="300" size="4"></label>
+    <label class="chk"><input type="checkbox" id="mesh_auto" onchange="saveMeshAuto()"> automatisch elke <input id="mesh_auto_interval_s" type="number" min="15" size="3" onchange="saveMeshAuto()"> s (0 hops)</label>
+    <span class="note" id="mesh-sum"></span>
     <span class="note" id="mesh-status">Zendt een openbare Meshtastic-groet op 869,525 MHz (LongFast) en luistert of nodes antwoorden. Het eigen kanaal ligt die tijd stil.</span>
   </div>
   <div class="tbl" id="mesh-res" style="display:none;margin-top:6px;max-height:220px"><table>
@@ -277,6 +279,7 @@ function fillForm(c) {
   const lf = S.led_functions || {};
   for (let i = 0; i < 3; i++) { $('led' + i).innerHTML = Object.entries(lf).map(([k, v]) => `<option value="${k}">${esc(v)}</option>`).join(''); $('led' + i).value = (c.led_fns || [])[i] || 'uit'; }
   $('led_brightness').value = c.led_brightness ?? 100; $('led-br-v').textContent = (c.led_brightness ?? 100) + ' %'; $('led_night').checked = c.led_night !== false;
+  $('mesh_auto').checked = !!c.mesh_auto; $('mesh_auto_interval_s').value = c.mesh_auto_interval_s ?? 30;
   $('range_test').checked = !!c.range_test; $('range_interval_s').value = c.range_interval_s ?? 10; $('range_dst').value = c.range_dst ?? 1;
   $('preset').innerHTML = Object.keys(S.presets).map(k => `<option>${k}</option>`).join('');
 }
@@ -391,11 +394,17 @@ async function saveLeds() {
   fillForm(res);
 }
 async function ledTest() { await post('/api/leds/test', {}, 'Kleurtest loopt: rood, groen, blauw'); }
+async function saveMeshAuto() {
+  fillForm(await post('/api/config', {mesh_auto: $('mesh_auto').checked, mesh_auto_interval_s: Number($('mesh_auto_interval_s').value)},
+    $('mesh_auto').checked ? 'Automatische Meshtastic-groet aan' : 'Automatische Meshtastic-groet uit'));
+}
 async function meshProbe() {
   const r = await post('/api/mesh/probe', {listen_s: Number($('mesh-s').value)}, 'Meshtastic-groet verzonden, luistert…');
 }
 function renderMesh() {
   const m = S.mesh_probe || {};
+  const ms = S.mesh_summary || {};
+  $('mesh-sum').textContent = ms.probes ? `${ms.probes} groeten, ${ms.with_answer} met antwoord${ms.nodes.length ? ' · nodes: ' + ms.nodes.join(', ') : ''}` : '';
   $('mesh-btn').disabled = !!m.active;
   if (m.started) {
     const n = (m.results || []).filter(r => r.crc_ok !== false).length;
