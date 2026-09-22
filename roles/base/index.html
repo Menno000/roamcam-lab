@@ -1,0 +1,484 @@
+<!doctype html>
+<html lang="nl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>LoRa-basis</title>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js" defer></script>
+<style>
+:root{--bg:#f4f5f7;--card:#fff;--fg:#1d2330;--mut:#6b7385;--line:#e2e5ea;--acc:#1f6feb;--ok:#1a7f37;--warn:#b35900;--bad:#c62828;--chip:#eef1f5}
+@media (prefers-color-scheme:dark){:root{--bg:#0f1218;--card:#181c24;--fg:#e6e9ef;--mut:#8b93a5;--line:#2a303b;--acc:#4c8dff;--ok:#3fb950;--warn:#e3a008;--bad:#f0625d;--chip:#222834}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--fg);font:14px/1.45 system-ui,-apple-system,Segoe UI,Roboto,sans-serif}
+header{display:flex;align-items:center;gap:12px;padding:12px 16px;border-bottom:1px solid var(--line);background:var(--card);position:sticky;top:0;z-index:5}
+header h1{font-size:16px;margin:0}
+.pill{padding:2px 8px;border-radius:99px;background:var(--chip);font-size:12px;color:var(--mut)}
+.pill.ok{color:var(--ok)}.pill.bad{color:var(--bad)}.pill.warn{color:var(--warn)}
+main{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(340px,100%),1fr));gap:12px;padding:12px 16px;max-width:1500px;margin:auto}
+section{min-width:0;background:var(--card);border:1px solid var(--line);border-radius:10px;padding:14px}
+section.wide{grid-column:1/-1}
+h2{font-size:13px;text-transform:uppercase;letter-spacing:.05em;color:var(--mut);margin:0 0 10px}
+.kv{display:grid;grid-template-columns:auto 1fr;gap:4px 12px}
+.kv div:nth-child(odd){color:var(--mut)}
+label{display:flex;flex-direction:column;gap:3px;font-size:12px;color:var(--mut)}
+input,select,button{font:inherit;color:var(--fg);background:var(--bg);border:1px solid var(--line);border-radius:6px;padding:6px 8px}
+button{background:var(--acc);color:#fff;border:0;cursor:pointer}
+button.sec{background:var(--chip);color:var(--fg)}
+button:disabled{opacity:.5}
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(130px,1fr));gap:8px}
+.row{display:flex;gap:8px;flex-wrap:wrap;align-items:end;margin-top:10px}
+.chk{flex-direction:row;align-items:center;gap:6px;color:var(--fg)}
+.meter{height:10px;background:var(--chip);border-radius:5px;overflow:hidden;margin:6px 0}
+.meter>div{height:100%;background:var(--ok)}
+.note{font-size:12px;color:var(--mut);margin-top:8px}
+.warnbox{border-left:3px solid var(--warn);padding:6px 10px;background:var(--chip);border-radius:4px;font-size:12px;margin-top:8px}
+table{width:100%;border-collapse:collapse;font-size:12px}
+th,td{text-align:left;padding:4px 6px;border-bottom:1px solid var(--line);vertical-align:top}
+th{color:var(--mut);font-weight:500;position:sticky;top:0;background:var(--card)}
+.tbl{max-height:460px;overflow:auto}
+td.hex{font-family:ui-monospace,Consolas,monospace;word-break:break-all;max-width:360px}
+.tx{color:var(--acc)}.rx{color:var(--ok)}
+canvas{width:100%;height:220px;display:block}
+#toast{position:fixed;bottom:18px;left:50%;transform:translateX(-50%);padding:10px 16px;border-radius:8px;background:var(--fg);color:var(--bg);opacity:0;transition:opacity .2s;pointer-events:none;z-index:20;max-width:90vw}
+#rmap{height:420px;border-radius:8px;margin-top:10px;background:var(--chip)}
+.stat{display:grid;grid-template-columns:repeat(auto-fill,minmax(130px,1fr));gap:8px;margin-top:10px}
+.stat div{background:var(--chip);border-radius:8px;padding:8px}
+.stat b{display:block;font-size:18px}
+#toast.show{opacity:1}#toast.err{background:var(--bad);color:#fff}
+</style>
+</head>
+<body>
+<header>
+  <h1 id="title">LoRa-basis</h1>
+  <span class="pill" id="p-radio">radio …</span>
+  <span class="pill" id="p-mode">…</span>
+  <span class="pill" id="p-band">…</span>
+</header>
+<main>
+<section>
+  <h2>Status</h2>
+  <div class="kv" id="status"></div>
+  <div class="note">Zendtijd laatste uur</div>
+  <div class="meter"><div id="duty-bar" style="width:0"></div></div>
+  <div class="note" id="duty-txt"></div>
+</section>
+
+<section>
+  <h2>Link-test</h2>
+  <div class="row">
+    <label>Naar node<input id="dst" value="255" size="4" title="255 = iedereen"></label>
+    <button onclick="ping()">Ping</button>
+    <label class="chk"><input type="checkbox" id="autoping"> elke <input id="autoping-s" value="30" size="3"> s</label>
+  </div>
+  <div class="row">
+    <label style="flex:1">Tekst<input id="msg" placeholder="bericht (max 230 tekens)"></label>
+    <button onclick="sendText()">Verstuur</button>
+  </div>
+  <div class="row">
+    <label style="flex:1">Rauwe bytes (hex, zonder eigen protocol)<input id="rawhex" placeholder="bv. 48656c6c6f"></label>
+    <button class="sec" onclick="sendRaw()">Rauw</button>
+  </div>
+  <h2 style="margin-top:14px">Andere nodes</h2>
+  <div id="peers" class="note">nog niets gehoord</div>
+</section>
+
+<section class="wide">
+  <h2>Bereiktest</h2>
+  <div class="kv" id="gps-status"></div>
+  <div class="row">
+    <label class="chk"><input type="checkbox" id="range_test"> bereiktest aan (deze unit pingt met GPS-positie)</label>
+    <label>elke (s)<input id="range_interval_s" type="number" min="2" size="4"></label>
+    <label>naar node<input id="range_dst" type="number" min="1" max="254" size="4"></label>
+    <button onclick="saveRange()">Opslaan</button>
+    <span class="note" id="range-duty"></span>
+    <span style="flex:1"></span>
+    <a class="note" href="/api/range" download="bereik.json">log downloaden</a>
+    <button class="sec" onclick="clearRange()">Log wissen</button>
+  </div>
+  <div class="stat" id="range-stats"></div>
+  <div id="rmap"></div>
+  <div class="note" id="rmap-note">Punten: groen sterk (≥ -90 dBm), oranje matig, rood zwak (&lt; -110 dBm), grijs = geen antwoord. De kaart heeft internet nodig; zonder internet blijft de tabel werken.</div>
+  <div class="tbl" style="margin-top:8px;max-height:300px"><table>
+    <thead><tr><th>tijd</th><th>kant</th><th>resultaat</th><th>afstand</th><th>RSSI hier / daar</th><th>SNR hier / daar</th><th>snelheid</th><th>SF/BW/dBm</th></tr></thead>
+    <tbody id="rtab"></tbody>
+  </table></div>
+</section>
+
+<section class="wide">
+  <h2>LED's</h2>
+  <div class="grid">
+    <label>LED 1<select id="led0" class="ledfn"></select></label>
+    <label>LED 2<select id="led1" class="ledfn"></select></label>
+    <label>LED 3<select id="led2" class="ledfn"></select></label>
+    <label>Helderheid <span id="led-br-v"></span><input id="led_brightness" type="range" min="0" max="100" step="5" oninput="$('led-br-v').textContent=this.value+' %'"></label>
+  </div>
+  <div class="row">
+    <label class="chk"><input type="checkbox" id="led_night"> 's nachts dimmen (22–07 u)</label>
+    <button onclick="saveLeds()">Opslaan</button>
+    <button class="sec" onclick="ledTest()">Kleurtest</button>
+    <span class="note">Kleurtest: alle drie 3 s rood, dan groen, dan blauw. Zie je iets anders, dan zijn de kanalen verwisseld.</span>
+  </div>
+  <div class="note" id="led-legend"></div>
+</section>
+
+<section class="wide">
+  <h2>Wifi: thuisnetwerk</h2>
+  <div class="kv" id="wifi-status"></div>
+  <div class="row">
+    <label>Netwerk<select id="wf-ssid"><option value="">— eerst zoeken —</option></select></label>
+    <button class="sec" onclick="wifiScan()" id="wf-scan">Zoeken</button>
+    <label>of naam typen<input id="wf-ssid-typed" placeholder="SSID"></label>
+    <label>Wachtwoord<input id="wf-pass" type="password" autocomplete="new-password" placeholder="leeg = ongewijzigd"></label>
+    <label class="chk"><input type="checkbox" id="wf-enabled" checked> automatisch verbinden</label>
+    <button onclick="wifiSave()">Opslaan</button>
+  </div>
+  <div class="row">
+    <button class="sec" onclick="wifiConnect()">Nu verbinden</button>
+    <button class="sec" onclick="wifiHold()">30 min op eigen AP blijven</button>
+    <button class="sec" onclick="wifiAP()">Terug naar eigen AP</button>
+    <button class="sec" onclick="wifiForget()">Thuisnetwerk vergeten</button>
+  </div>
+  <div class="row">
+    <label>Nieuw wachtwoord eigen wifi<input id="ap-pass" type="password" autocomplete="new-password" placeholder="8–63 tekens"></label>
+    <button class="sec" onclick="apPass()">Opslaan</button>
+    <span class="note">Standaard is dit nog het openbaar bekende <code>hivemapper</code>. Gaat in bij de volgende herstart.</span>
+  </div>
+  <div class="warnbox">Hoe het werkt: na het opstarten staat het basisstation altijd eerst op zijn eigen wifi
+  (<b id="wf-apname">roamcam-basis</b>, 192.168.0.10). Na 1 minuut, en alleen als niemand daarop is aangesloten, zoekt hij je
+  thuisnetwerk en schakelt dan over. Lukt dat niet, of valt het thuisnetwerk 2 minuten weg, dan gaat hij vanzelf terug naar zijn eigen wifi.
+  Thuis is hij bereikbaar op <b>http://roamcam-basis.local:8080</b> of op het adres hierboven.</div>
+  <div class="note" id="wf-log"></div>
+</section>
+
+<section class="wide">
+  <h2>Radio-instellingen</h2>
+  <div class="row" style="margin-top:0">
+    <label>Voorinstelling<select id="preset"></select></label>
+    <button class="sec" onclick="applyPreset()">Laden</button>
+  </div>
+  <div class="grid" style="margin-top:10px">
+    <label>Frequentie (MHz)<input id="freq_mhz"></label>
+    <label>Spreading factor<select id="sf"></select></label>
+    <label>Bandbreedte (kHz)<select id="bw"></select></label>
+    <label>Coding rate<select id="cr"><option value="1">4/5</option><option value="2">4/6</option><option value="3">4/7</option><option value="4">4/8</option></select></label>
+    <label>Zendvermogen (dBm)<input id="power_dbm" type="number" min="-9" max="22"></label>
+    <label>Syncword (hex)<input id="sync"></label>
+    <label>Preamble<input id="preamble" type="number"></label>
+    <label>Node-id<input id="node_id" type="number" min="1" max="254"></label>
+    <label>Node-naam<input id="node_name"></label>
+    <label>Baken elke (s, 0=uit)<input id="beacon_s" type="number" min="0"></label>
+    <label>Duty-cycle % (leeg=wettelijk)<input id="duty_pct" placeholder="auto"></label>
+    <label>Netwerksleutel<input id="net_key" type="password" placeholder="leeg = onversleuteld"></label>
+  </div>
+  <div class="row">
+    <label class="chk"><input type="checkbox" id="enforce_duty"> duty-cycle-limiet handhaven</label>
+    <label class="chk"><input type="checkbox" id="enforce_power"> vermogensgrens handhaven</label>
+    <label class="chk"><input type="checkbox" id="crc"> CRC</label>
+    <label class="chk"><input type="checkbox" id="invert_iq"> IQ omgekeerd</label>
+    <label class="chk"><input type="checkbox" id="echo_ping"> ping beantwoorden</label>
+    <label class="chk"><input type="checkbox" id="raw_log"> vreemde pakketten loggen</label>
+    <button onclick="saveCfg()">Opslaan</button>
+  </div>
+  <div class="warnbox" id="legal"></div>
+</section>
+
+<section class="wide">
+  <h2>Spectrum 863–870 MHz</h2>
+  <div class="row" style="margin-top:0">
+    <label>Van<input id="sc-start" value="863" size="6"></label>
+    <label>Tot<input id="sc-stop" value="870" size="6"></label>
+    <label>Stap (MHz)<input id="sc-step" value="0.05" size="5"></label>
+    <button onclick="scan()" id="sc-btn">Scannen</button>
+    <span class="note" id="sc-note"></span>
+  </div>
+  <canvas id="spec"></canvas>
+</section>
+
+<section class="wide">
+  <h2>Apparaten in de buurt</h2>
+  <div class="row" style="margin-top:0">
+    <button id="btn-scan2" onclick="toggleSniff()">Scanner aan</button>
+    <span class="note" id="scan-info"></span>
+    <span style="flex:1"></span>
+    <button class="sec" onclick="clearDevices()">Lijst wissen</button>
+  </div>
+  <div class="tbl" style="margin-top:8px"><table>
+    <thead><tr><th>apparaat</th><th>netwerk</th><th>soort</th><th>gehoord</th><th>eerst</th><th>laatst</th><th>beste RSSI</th><th>laatste RSSI / SNR</th><th>kanalen</th><th>details</th></tr></thead>
+    <tbody id="dev"></tbody>
+  </table></div>
+  <div class="note">RSSI: hoe dichter bij 0, hoe sterker. Rond -60 dBm is dichtbij (straat), onder -110 dBm ver weg of achter veel muren.</div>
+</section>
+
+<section class="wide">
+  <h2>Kanaalactiviteit (CAD-treffers)</h2>
+  <div class="tbl"><table id="chan"></table></div>
+  <div class="note">Per cel: <span style="color:var(--warn)">keren LoRa gedetecteerd</span> / <b style="color:var(--ok)">pakketten gedecodeerd</b>, van het aantal keren dat erop gekeken is.</div>
+</section>
+
+<section class="wide">
+  <h2>Pakketten</h2>
+  <div class="row" style="margin-top:0">
+    <button class="sec" id="btn-sniff" onclick="toggleSniff()">Scanner aan</button>
+    <span class="note" id="sniff-cur"></span>
+    <span style="flex:1"></span>
+    <a class="note" href="/api/log">log downloaden</a>
+    <button class="sec" onclick="clearLog()">Scherm leegmaken</button>
+  </div>
+  <div class="tbl" style="margin-top:8px"><table>
+    <thead><tr><th>tijd</th><th></th><th>soort</th><th>inhoud</th><th>RSSI</th><th>SNR</th><th>radio</th><th>hex</th></tr></thead>
+    <tbody id="pk"></tbody>
+  </table></div>
+</section>
+</main>
+<div id="toast"></div>
+<script>
+const $ = id => document.getElementById(id);
+let S = null, lastId = 0, cfgLoaded = false, autoTimer = null;
+
+// Eén gedeelde bevestiging voor elke actie.
+function toast(msg, err) {
+  const t = $('toast'); t.textContent = msg; t.className = 'show' + (err ? ' err' : '');
+  clearTimeout(t._h); t._h = setTimeout(() => t.className = '', err ? 5000 : 2200);
+}
+async function post(path, body, okMsg) {
+  try {
+    const r = await fetch(path, {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(body || {})});
+    const j = await r.json();
+    if (!j.ok) throw new Error(j.error || 'mislukt');
+    if (okMsg) toast(okMsg);
+    return j.result;
+  } catch (e) { toast(e.message, true); throw e; }
+}
+const fmtT = ts => new Date(ts * 1000).toLocaleTimeString('nl-NL');
+const esc = s => String(s ?? '').replace(/[&<>]/g, c => ({'&': '&amp;', '<': '&lt;', '>': '&gt;'}[c]));
+
+function fillForm(c) {
+  const sf = $('sf'); sf.innerHTML = [5,6,7,8,9,10,11,12].map(v => `<option>${v}</option>`).join('');
+  const bw = $('bw'); bw.innerHTML = [7.8,10.4,15.6,20.8,31.25,41.7,62.5,125,250,500].map(v => `<option>${v}</option>`).join('');
+  for (const k of ['freq_mhz','sf','bw','cr','power_dbm','preamble','node_id','node_name','beacon_s','net_key']) $(k).value = c[k];
+  $('sync').value = '0x' + Number(c.sync).toString(16).toUpperCase();
+  $('duty_pct').value = c.duty_pct ?? '';
+  for (const k of ['enforce_duty','enforce_power','crc','invert_iq','echo_ping','raw_log']) $(k).checked = !!c[k];
+  const lf = S.led_functions || {};
+  for (let i = 0; i < 3; i++) { $('led' + i).innerHTML = Object.entries(lf).map(([k, v]) => `<option value="${k}">${esc(v)}</option>`).join(''); $('led' + i).value = (c.led_fns || [])[i] || 'uit'; }
+  $('led_brightness').value = c.led_brightness ?? 100; $('led-br-v').textContent = (c.led_brightness ?? 100) + ' %'; $('led_night').checked = c.led_night !== false;
+  $('range_test').checked = !!c.range_test; $('range_interval_s').value = c.range_interval_s ?? 10; $('range_dst').value = c.range_dst ?? 1;
+  $('preset').innerHTML = Object.keys(S.presets).map(k => `<option>${k}</option>`).join('');
+}
+async function saveCfg() {
+  const c = {};
+  for (const k of ['freq_mhz','sf','bw','cr','power_dbm','preamble','node_id','node_name','beacon_s','net_key','sync','duty_pct']) c[k] = $(k).value;
+  for (const k of ['enforce_duty','enforce_power','crc','invert_iq','echo_ping','raw_log']) c[k] = $(k).checked;
+  c.beacon_s = Number(c.beacon_s);
+  const res = await post('/api/config', c, 'Instellingen opgeslagen en actief');
+  fillForm(res);
+}
+async function applyPreset() { const res = await post('/api/preset', {name: $('preset').value}, 'Voorinstelling geladen'); fillForm(res); }
+async function ping() { await post('/api/ping', {dst: $('dst').value}, 'Ping verzonden'); }
+async function sendText() { if (!$('msg').value) return; await post('/api/send', {text: $('msg').value, dst: $('dst').value}, 'Bericht verzonden'); $('msg').value = ''; }
+async function sendRaw() { await post('/api/send', {hex: $('rawhex').value.replace(/\s/g, '')}, 'Rauwe bytes verzonden'); }
+async function toggleSniff() { const m = S.mode === 'sniff' ? 'link' : 'sniff'; await post('/api/mode', {mode: m}, m === 'sniff' ? 'Scanner aan: zoekt op alle LoRaWAN- en Meshtastic-kanalen' : 'Scanner uit, luistert alleen op het eigen kanaal'); }
+async function wifiScan() {
+  $('wf-scan').disabled = true;
+  try {
+    const nets = await post('/api/wifi/scan', {}, 'Netwerken gezocht');
+    $('wf-ssid').innerHTML = '<option value="">— kies —</option>' + nets.map(n => `<option value="${esc(n.ssid)}">${esc(n.ssid)} (${n.signal} dBm${n.secure ? '' : ', open'})</option>`).join('');
+    if (S && S.wifi.ssid) $('wf-ssid').value = S.wifi.ssid;
+  } finally { $('wf-scan').disabled = false; }
+}
+async function wifiSave() {
+  const ssid = $('wf-ssid-typed').value.trim() || $('wf-ssid').value;
+  if (!ssid) return toast('Kies of typ eerst een netwerk', true);
+  await post('/api/wifi', {ssid, password: $('wf-pass').value, enabled: $('wf-enabled').checked}, 'Thuisnetwerk opgeslagen: ' + ssid);
+  $('wf-pass').value = '';
+}
+async function wifiConnect() {
+  if (S.wifi.mode === 'ap' && !confirm('Het basisstation verlaat nu zijn eigen wifi. Zit je daar zelf op, dan verlies je de verbinding; je vindt hem daarna op je thuisnetwerk. Doorgaan?')) return;
+  await post('/api/wifi/connect', {}, 'Verbinden gestart, dit duurt tot ~30 s');
+}
+async function apPass() { await post('/api/ap_password', {password: $('ap-pass').value}, 'Wachtwoord eigen wifi opgeslagen, actief na herstart'); $('ap-pass').value = ''; }
+async function wifiHold() { await post('/api/wifi/hold', {minutes: 30}, 'Blijft 30 minuten op de eigen wifi'); }
+async function wifiAP() { if (!confirm('Terug naar de eigen wifi (roamcam-basis)? Op je thuisnetwerk is hij dan niet meer bereikbaar.')) return; await post('/api/wifi/ap', {}, 'Schakelt terug naar de eigen wifi'); }
+async function wifiForget() { if (!confirm('Thuisnetwerk vergeten?')) return; await post('/api/wifi', {ssid: ''}, 'Thuisnetwerk vergeten'); }
+let R = [], rLast = 0, rMap = null, rLayer = null, rBase = null, rFit = false;
+function distM(a, b, c, d) {
+  if ([a, b, c, d].some(v => v == null)) return null;
+  const r = Math.PI / 180, x = Math.sin((c - a) * r / 2) ** 2 + Math.cos(a * r) * Math.cos(c * r) * Math.sin((d - b) * r / 2) ** 2;
+  return 12742000 * Math.asin(Math.sqrt(x));
+}
+const fmtD = m => m == null ? '–' : m < 1000 ? Math.round(m) + ' m' : (m / 1000).toFixed(2) + ' km';
+const rCol = r => !r.ok ? '#8b93a5' : ((r.side === 'basis' ? r.rssi : Math.min(r.rssi_here ?? 0, r.rssi_there ?? 0)) >= -90 ? '#1a7f37' : (r.side === 'basis' ? r.rssi : Math.min(r.rssi_here ?? 0, r.rssi_there ?? 0)) >= -110 ? '#e3a008' : '#c62828');
+async function saveRange() {
+  const res = await post('/api/config', {range_test: $('range_test').checked, range_interval_s: Number($('range_interval_s').value), range_dst: Number($('range_dst').value)},
+    $('range_test').checked ? 'Bereiktest aan' : 'Bereiktest uit');
+  fillForm(res);
+}
+async function clearRange() { if (!confirm('Bereiklog wissen? (het oude bestand wordt bewaard als kopie)')) return; await post('/api/range/clear', {}, 'Bereiklog gewist'); R = []; rLast = 0; renderRange(); }
+function basePos() {
+  if (S && S.cfg.node_id == 1 && S.gps && S.gps.ok) return [S.gps.lat, S.gps.lon];
+  const b = [...R].reverse().find(r => r.base_lat != null);
+  return b ? [b.base_lat, b.base_lon] : null;
+}
+async function tickRange() {
+  try { const n = await (await fetch('/api/range?since=' + rLast)).json(); if (n.length) { R = R.concat(n).slice(-20000); rLast = n[n.length - 1].id; } renderRange(); } catch (e) {}
+}
+function renderRange() {
+  if (!S) return;
+  const g = S.gps || {};
+  $('gps-status').innerHTML = [
+    ['GPS', g.error ? `<span style="color:var(--bad)">${esc(g.error)}</span>` : g.ok ? `<span style="color:var(--ok)">fix</span> · ${g.sats} satellieten · ±${g.hacc_m} m · ${g.speed_kmh} km/u` : `geen fix${g.sats != null ? ' (' + g.sats + ' satellieten)' : ''}${g.frames ? '' : ', geen gegevens van de ontvanger'}`],
+  ].map(([k, v]) => `<div>${k}</div><div>${v}</div>`).join('');
+  const iv = Number(S.cfg.range_interval_s || 10);
+  $('range-duty').textContent = `≈ ${(S.airtime_20b_ms / iv / 10).toFixed(1)} % zendtijd bij deze instelling (limiet ${S.duty_limit_pct} %)`;
+  const bp = basePos();
+  const mob = R.filter(r => r.side === 'mobiel' && r.ok !== null), bas = R.filter(r => r.side === 'basis');
+  const own = S.cfg.node_id == 1 ? bas : mob;
+  const ok = own.filter(r => r.ok);
+  const dist = r => bp ? distM(r.lat, r.lon, bp[0], bp[1]) : null;
+  const far = ok.map(dist).filter(v => v != null);
+  const lostMob = mob.filter(r => !r.ok);
+  const last = own[own.length - 1];
+  $('range-stats').innerHTML = (S.cfg.node_id == 1 ? [
+    ['pings ontvangen', bas.length], ['verste ontvangst', fmtD(far.length ? Math.max(...far) : null)],
+    ['laatste RSSI', last ? last.rssi + ' dBm' : '–'], ['laatste SNR', last ? last.snr + ' dB' : '–'],
+    ['laatste afstand', fmtD(last ? dist(last) : null)],
+  ] : [
+    ['verstuurd', mob.length], ['beantwoord', `${ok.length} (${mob.length ? Math.round(100 * ok.length / mob.length) : 0} %)`],
+    ['geen antwoord', lostMob.length], ['verste met antwoord', fmtD(far.length ? Math.max(...far) : null)],
+    ['laatste afstand', fmtD(last ? dist(last) : null)],
+    ['laatste RSSI hier/daar', last && last.ok ? `${last.rssi_here} / ${last.rssi_there}` : '–'],
+  ]).map(([k, v]) => `<div>${k}<b>${v}</b></div>`).join('');
+  $('rtab').innerHTML = [...own].slice(-40).reverse().map(r => `<tr><td>${fmtT(r.time)}</td><td>${r.side}</td><td style="color:${rCol(r)}">${r.ok ? 'ok' : r.error ? esc(r.error) : 'geen antwoord'}</td><td>${fmtD(dist(r))}</td><td>${r.side === 'basis' ? r.rssi : (r.rssi_here ?? '–') + ' / ' + (r.rssi_there ?? '–')}</td><td>${r.side === 'basis' ? r.snr : (r.snr_here ?? '–') + ' / ' + (r.snr_there ?? '–')}</td><td>${r.speed_kmh ?? '–'} km/u</td><td>SF${r.sf}/${r.bw}${r.power_dbm != null ? '/' + r.power_dbm : ''}</td></tr>`).join('');
+  if (!window.L) { $('rmap').style.display = 'none'; return; }
+  $('rmap').style.display = '';
+  if (!rMap) {
+    rMap = L.map('rmap').setView(bp || [52.1, 5.3], bp ? 13 : 8);
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {maxZoom: 19, attribution: '© OpenStreetMap'}).addTo(rMap);
+    rLayer = L.layerGroup().addTo(rMap);
+  }
+  rLayer.clearLayers();
+  const pts = own.filter(r => r.lat != null);
+  for (const r of pts) L.circleMarker([r.lat, r.lon], {radius: 5, color: rCol(r), fillColor: rCol(r), fillOpacity: .85, weight: 1})
+    .bindTooltip(`${fmtT(r.time)} · ${r.ok ? 'ok' : 'geen antwoord'} · ${fmtD(dist(r))}<br>RSSI ${r.side === 'basis' ? r.rssi : (r.rssi_here ?? '–') + ' / ' + (r.rssi_there ?? '–')}`).addTo(rLayer);
+  if (bp) L.marker(bp).bindTooltip('basis').addTo(rLayer);
+  if (!rFit && pts.length > 1) { rMap.fitBounds(L.latLngBounds(pts.map(r => [r.lat, r.lon]).concat(bp ? [bp] : [])), {padding: [20, 20]}); rFit = true; }
+}
+setInterval(tickRange, 2000);
+async function saveLeds() {
+  const res = await post('/api/config', {led_fns: [0, 1, 2].map(i => $('led' + i).value), led_brightness: Number($('led_brightness').value), led_night: $('led_night').checked}, "LED-instellingen opgeslagen");
+  fillForm(res);
+}
+async function ledTest() { await post('/api/leds/test', {}, 'Kleurtest loopt: rood, groen, blauw'); }
+async function clearDevices() { if (!confirm('Lijst met gehoorde apparaten wissen?')) return; await post('/api/devices/clear', {}, 'Apparatenlijst gewist'); }
+async function clearLog() { await post('/api/clear', {}, 'Scherm leeggemaakt (logbestand blijft)'); $('pk').innerHTML = ''; }
+$('autoping').onchange = () => {
+  clearInterval(autoTimer);
+  if ($('autoping').checked) { autoTimer = setInterval(() => post('/api/ping', {dst: $('dst').value}).catch(() => {}), Math.max(5, +$('autoping-s').value) * 1000); toast('Automatisch pingen aan'); }
+  else toast('Automatisch pingen uit');
+};
+
+async function scan() {
+  $('sc-btn').disabled = true; $('sc-note').textContent = 'bezig …';
+  try {
+    const r = await post('/api/scan', {start: $('sc-start').value, stop: $('sc-stop').value, step: $('sc-step').value}, 'Scan klaar');
+    drawSpec(r.points);
+  } finally { $('sc-btn').disabled = false; $('sc-note').textContent = ''; }
+}
+function drawSpec(pts) {
+  const cv = $('spec'), dpr = devicePixelRatio || 1, W = cv.clientWidth, H = cv.clientHeight;
+  cv.width = W * dpr; cv.height = H * dpr; const g = cv.getContext('2d'); g.scale(dpr, dpr);
+  const css = getComputedStyle(document.documentElement), col = n => css.getPropertyValue(n).trim();
+  const lo = -130, hi = -40, pad = 34, x = f => pad + (f - pts[0][0]) / (pts[pts.length-1][0] - pts[0][0] || 1) * (W - pad - 6), y = v => 6 + (hi - v) / (hi - lo) * (H - 26);
+  g.fillStyle = col('--mut'); g.font = '11px system-ui'; g.strokeStyle = col('--line');
+  for (let v = hi; v >= lo; v -= 20) { g.beginPath(); g.moveTo(pad, y(v)); g.lineTo(W, y(v)); g.stroke(); g.fillText(v, 2, y(v) + 4); }
+  // wettelijke subbanden als achtergrond
+  const bands = [[868.0,868.6],[869.4,869.65],[865,868],[869.7,870]];
+  g.fillStyle = col('--chip'); for (const [a,b] of bands) if (b >= pts[0][0] && a <= pts[pts.length-1][0]) g.fillRect(x(Math.max(a, pts[0][0])), 6, x(Math.min(b, pts[pts.length-1][0])) - x(Math.max(a, pts[0][0])), H - 26);
+  g.strokeStyle = col('--acc'); g.lineWidth = 1.5; g.beginPath(); pts.forEach((p, i) => i ? g.lineTo(x(p[0]), y(p[2])) : g.moveTo(x(p[0]), y(p[2]))); g.stroke();
+  g.strokeStyle = col('--warn'); g.lineWidth = 1; g.beginPath(); pts.forEach((p, i) => i ? g.lineTo(x(p[0]), y(p[1])) : g.moveTo(x(p[0]), y(p[1]))); g.stroke();
+  g.fillStyle = col('--mut');
+  for (let f = Math.ceil(pts[0][0]); f <= pts[pts.length-1][0]; f++) g.fillText(f + '', x(f) - 10, H - 6);
+  g.fillText('blauw = gemiddeld, oranje = piek (dBm)', W - 220, 16);
+}
+
+function render() {
+  const c = S.cfg, b = S.band, r = S.radio;
+  $('title').textContent = 'LoRa-basis · ' + (S.hostname || '');
+  $('p-radio').textContent = r.error ? 'radio: fout' : 'radio OK'; $('p-radio').className = 'pill ' + (r.error ? 'bad' : 'ok');
+  $('p-band').textContent = b ? `subband ${b.from}–${b.to} MHz` : 'buiten vrije subband'; $('p-band').className = 'pill ' + (b ? '' : 'warn');
+  const scanTxt = S.mode === 'sniff' ? 'Scanner uit' : 'Scanner aan';
+  $('btn-sniff').textContent = scanTxt; $('btn-scan2').textContent = scanTxt;
+  $('p-mode').textContent = S.mode === 'sniff' ? 'scanner' : 'eigen link';
+  const ss = S.scan_stats;
+  $('sniff-cur').textContent = S.mode === 'sniff' ? 'nu: ' + (S.sniff_cur || '') : '';
+  $('scan-info').textContent = S.mode === 'sniff'
+    ? `${ss.targets} kanaal/SF-combinaties, ronde ${ss.pass_nr} duurt ${ss.pass_ms ?? '…'} ms · ${ss.cad} keer gekeken, ${ss.hits} keer iets gehoord · nu: ${S.sniff_cur || ''}`
+    : 'Scanner staat uit: alleen het eigen kanaal wordt beluisterd. Zenden kan alleen met de scanner uit.';
+  const ago = ts => { const s = Math.round(S.time - ts); return s < 60 ? s + ' s' : s < 3600 ? Math.round(s / 60) + ' min' : s < 86400 ? Math.round(s / 3600) + ' u' : Math.round(s / 86400) + ' d'; };
+  $('dev').innerHTML = S.devices.length ? S.devices.map(d => {
+    const det = Object.entries(d).filter(([k]) => ['fcnt','fport','join_eui','hop_limit','channel_hash','note','voorbeeld_hex','auth'].includes(k) && d[k] != null).map(([k, v]) => `${k}: ${esc(v)}`).join(' · ');
+    const fresh = S.time - d.last < 300;
+    return `<tr${fresh ? ' style="font-weight:600"' : ''}><td>${esc(d.key)}</td><td>${esc(d.net)}</td><td>${esc(d.kind)}</td><td>${d.count}×</td><td>${ago(d.first)} geleden</td><td>${ago(d.last)} geleden</td><td>${d.best_rssi ?? ''}</td><td>${d.rssi ?? ''} / ${d.snr ?? '–'}</td><td>${d.freqs.join(', ')} MHz · SF${d.sfs.join('/')}</td><td class="hex">${det}</td></tr>`;
+  }).join('') : `<tr><td colspan="10" class="note">${S.mode === 'sniff' ? 'nog niets gehoord, de scanner zoekt …' : 'zet de scanner aan om apparaten te zoeken'}</td></tr>`;
+  const ch = S.channels.filter(c => c.cad);
+  if (ch.length) {
+    const sfs = [...new Set(ch.map(c => c.sf))].sort((a, b) => a - b), rows = [...new Set(ch.map(c => c.net + '|' + c.f + '|' + c.bw))];
+    $('chan').innerHTML = `<tr><th>netwerk</th><th>MHz</th><th>BW</th>${sfs.map(s => `<th>SF${s}</th>`).join('')}</tr>` + rows.map(r => {
+      const [net, f, bw] = r.split('|');
+      return `<tr><td>${net}</td><td>${(+f).toFixed(3)}</td><td>${bw}</td>` + sfs.map(sf => { const c = ch.find(x => x.net === net && x.f == f && x.bw == bw && x.sf === sf); return `<td>${c ? `<span style="color:${c.hits ? 'var(--warn)' : 'var(--mut)'}">${c.hits}</span>${c.pkts ? ` / <b style="color:var(--ok)">${c.pkts}</b>` : ''} <span class="note">van ${c.cad}</span>` : ''}</td>`; }).join('') + '</tr>';
+    }).join('');
+  } else $('chan').innerHTML = '<tr><td class="note">nog geen scangegevens</td></tr>';
+  const w = S.wifi;
+  $('wifi-status').innerHTML = [
+    ['Nu', w.mode === 'home' ? `<span style="color:var(--ok)">op thuisnetwerk ${esc(w.ssid)}</span>, adres <b>${w.ip}</b>` : `op eigen wifi (${S.hostname}), 192.168.0.10` + (w.clients ? ` · ${w.clients} verbonden` : '')],
+    ['Thuisnetwerk', w.ssid ? `${esc(w.ssid)} · ${w.has_password ? 'wachtwoord opgeslagen' : 'geen wachtwoord'} · automatisch ${w.enabled ? 'aan' : 'uit'}` : 'niet ingesteld'],
+    ['Laatste zoektocht', w.last_scan ? fmtT(w.last_scan) + (w.seen ? ` · gezien, ${w.signal} dBm` : ' · niet gezien') : '–'],
+    ['Melding', w.last_error ? `<span style="color:var(--warn)">${esc(w.last_error)}</span>` : '–'],
+  ].concat(w.hold_ap_s ? [['Vastgehouden', `nog ${Math.ceil(w.hold_ap_s / 60)} min op eigen wifi`]] : []).map(([k, v]) => `<div>${k}</div><div>${v}</div>`).join('');
+  $('wf-log').innerHTML = (w.log || []).slice(-6).reverse().map(([t, m]) => `${fmtT(t)} · ${esc(m)}`).join('<br>');
+  $('wf-apname').textContent = S.hostname;
+  const st = S.stats;
+  $('status').innerHTML = [
+    ['Radio', r.error ? `<span style="color:var(--bad)">${esc(r.error)}</span>` : `SX1262, ${r.info.tcxo ? 'TCXO ' + r.info.tcxo + ' V' : 'kristal'}`],
+    ['Kanaal', `${c.freq_mhz} MHz · SF${c.sf} · BW ${c.bw} kHz · CR 4/${4 + +c.cr} · sync 0x${(+c.sync).toString(16)}`],
+    ['Vermogen', `${c.power_dbm} dBm` + (b && c.power_dbm > b.max_dbm ? ` <span style="color:var(--warn)">(boven ${b.max_dbm} dBm ERP van deze subband)</span>` : '')],
+    ['Ruis nu', r.rssi_now != null ? r.rssi_now + ' dBm' : '–'],
+    ['Zendtijd 20 B', S.airtime_20b_ms + ' ms per pakket'],
+    ['Ontvangen', `${st.rx_eigen || 0} eigen · ${st.rx_vreemd || 0} vreemd · ${st.rx_crc_fout || 0} CRC-fout · ${st.rx_header_fout || 0} headerfout`],
+    ['Verzonden', `${st.tx || 0}` + (st.baken_overgeslagen ? ` · ${st.baken_overgeslagen} baken overgeslagen (limiet)` : '')],
+    ['Versleuteling', c.net_key ? 'aan (SHA-256-CTR + HMAC)' : 'uit'],
+    ['Klok', fmtT(S.time)],
+  ].map(([k, v]) => `<div>${k}</div><div>${v}</div>`).join('');
+  const pct = Math.min(100, S.airtime_hour_ms / S.airtime_limit_ms * 100);
+  $('duty-bar').style.width = pct + '%'; $('duty-bar').style.background = pct > 90 ? 'var(--bad)' : pct > 60 ? 'var(--warn)' : 'var(--ok)';
+  $('duty-txt').textContent = `${(S.airtime_hour_ms / 1000).toFixed(1)} s van ${(S.airtime_limit_ms / 1000).toFixed(0)} s (${S.duty_limit_pct} %)` + (c.enforce_duty ? '' : ' · limiet NIET gehandhaafd');
+  const pk = Math.floor(S.airtime_limit_ms / S.airtime_20b_ms);
+  $('legal').innerHTML = b
+    ? `Deze subband (${b.from}–${b.to} MHz) mag volgens de EU-regels (ERC 70-03) maximaal <b>${b.max_dbm} dBm ERP</b> en <b>${b.duty_pct} %</b> zendtijd. Met de huidige instellingen is dat ongeveer <b>${pk} pakketjes van 20 bytes per uur</b>. De SX1262 kan maximaal 22 dBm. ` + (b.max_dbm >= 22 ? 'Hier mag dus het volle vermogen van de chip.' : '')
+    : 'Deze frequentie/bandbreedte valt niet helemaal in een vergunningsvrije EU-subband.';
+  $('peers').innerHTML = S.peers.length ? '<table><tr><th>node</th><th>laatst</th><th>RSSI hier</th><th>SNR</th><th>RSSI daar</th><th>RTT</th><th>baken</th></tr>' + S.peers.map(p =>
+    `<tr><td>${p.node_id}${p.auth === false ? ' ⚠' : ''}</td><td>${fmtT(p.last)}</td><td>${p.rssi}</td><td>${p.snr}</td><td>${p.their_rssi ?? '–'}</td><td>${p.rtt_ms ? p.rtt_ms + ' ms' : '–'}</td><td>${esc(JSON.stringify(p.beacon || ''))}</td></tr>`).join('') + '</table>' : 'nog niets gehoord';
+  const tb = $('pk');
+  for (const p of S.packets) {
+    lastId = Math.max(lastId, p.id);
+    const tr = document.createElement('tr');
+    const kind = p.dir === 'tx' ? `${p.type}${p.auto ? ' (auto)' : ''} → ${p.dst ?? ''}` : (p.error ? 'headerfout' : p.kind === 'eigen' ? `${p.type} van ${p.frame.src}${p.frame.auth === false ? ' ⚠ auth' : ''}` : p.kind);
+    const inhoud = p.dir === 'tx' ? `${esc(p.text)} · ${p.airtime_ms} ms zendtijd` : esc(p.text || p.frame?.note || '') + (p.rtt_ms ? ` · RTT ${p.rtt_ms} ms, daar ${p.remote_rssi} dBm / SNR ${p.remote_snr}` : '') + (p.crc_ok === false ? ' CRC-fout' : '');
+    tr.innerHTML = `<td>${fmtT(p.time)}</td><td class="${p.dir}">${p.dir === 'tx' ? '▲' : '▼'}</td><td>${esc(kind)}</td><td>${inhoud}</td><td>${p.rssi ?? ''}</td><td>${p.snr ?? ''}</td><td>${p.freq} SF${p.sf}/${p.bw}</td><td class="hex">${p.hex || ''}</td>`;
+    tb.prepend(tr);
+  }
+  while (tb.children.length > 500) tb.lastChild.remove();
+}
+async function tick() {
+  try {
+    S = await (await fetch('/api/state?since=' + lastId)).json();
+    if (!cfgLoaded) { fillForm(S.cfg); cfgLoaded = true; $('wf-enabled').checked = S.wifi.enabled || !S.wifi.ssid; $('wf-ssid-typed').value = S.wifi.ssid || ''; if (S.last_scan) drawSpec(S.last_scan.points); }
+    render();
+  } catch (e) { $('p-radio').textContent = 'geen verbinding'; $('p-radio').className = 'pill bad'; }
+}
+fetch('/api/time', {method: 'POST', body: JSON.stringify({epoch_ms: Date.now()})});
+tick(); setInterval(tick, 1000);
+</script>
+</body>
+</html>

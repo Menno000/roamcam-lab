@@ -8,3 +8,12 @@ Thumbs.db
 trips/
 *.mp4
 *.gpx
+
+# rol basis: instellingen en logs die op de unit ontstaan (bevatten o.a. wifi-sleutel en posities)
+roles/base/config.json
+roles/base/wifi.json
+roles/base/ap_pass
+roles/base/hostname
+roles/base/apparaten.json
+roles/base/*.jsonl
+roles/base/*.jsonl.*
