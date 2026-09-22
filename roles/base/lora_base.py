@@ -1129,6 +1129,11 @@ class Handler(BaseHTTPRequestHandler):
             elif p == "/api/wifi/ap":
                 threading.Thread(target=WH.to_ap, args=("handmatig teruggezet",), daemon=True).start()
                 res = {"ok": True}
+            elif p == "/api/gps/save":
+                res = {"saved": GP.save_dbd(), "meta": GP.aided}
+            elif p == "/api/gps/coldstart":
+                # alleen om te testen: zelfde effect als stroom eraf (UBX-CFG-RST, koude start)
+                res = {"reset": GP.cold_reset(aid=bool(req.get("aid", True)))}
             elif p == "/api/mesh/probe":
                 res = ST.mesh_probe(req.get("listen_s", 60))
             elif p == "/api/leds/test":
