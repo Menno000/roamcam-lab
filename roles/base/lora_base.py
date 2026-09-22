@@ -617,6 +617,12 @@ class Station:
         rec = {"side": "mobiel", "time": time.time(), "lat": pos.get("lat"), "lon": pos.get("lon"),
                "speed_kmh": pos.get("speed_kmh"), "hacc_m": pos.get("hacc_m"), "sats": pos.get("sats"),
                "sf": c["sf"], "bw": c["bw"], "power_dbm": c["power_dbm"], "freq": c["freq_mhz"]}
+        # diagnose, ook zonder fix: waarom er geen positie is (satellieten, bron) en of de voeding zakt
+        gs = GP.status()
+        thr = sh("cat /sys/devices/platform/soc/soc:firmware/get_throttled")
+        rec.update(gps_sats=gs.get("sats"), gps_fix=gs.get("fix_type"), gps_src=gs.get("source"),
+                   gps_baud=gs.get("baud"), gps_err=gs.get("error"), throttled=thr,
+                   uptime_s=int(time.monotonic() - self.started))
         try:
             tx = self._send(T_PING, int(c.get("range_dst", 1)), self._pos_payload(), auto=True)
         except Exception as e:  # noqa: BLE001
@@ -994,7 +1000,7 @@ class Station:
             "hostname": sh("hostname"), "time": time.time(), "last_scan": self.last_scan,
             "wifi": WH.public(),
             "led_functions": LED_FUNCTIONS,
-            "gps": dict(GP.fix, ok=GP.has_fix(), age_s=GP.age_s(), error=GP.error, frames=GP.frames),
+            "gps": GP.status(),
             "devices": sorted(self.devices.values(), key=lambda d: -d["last"]),
             "channels": sorted(self.chan.values(), key=lambda c: (c["net"], c["f"], c["sf"])),
             "scan_stats": dict(self.scan_stats, targets=len(self._scan_targets()), pass_nr=self.scan_pass),
