@@ -26,6 +26,7 @@ from sx1262 import SX1262, airtime_ms, BW_CODE  # noqa: E402
 from wifi_home import WifiHome  # noqa: E402
 from gps import GPS  # noqa: E402
 from leds import Leds, FUNCTIONS as LED_FUNCTIONS  # noqa: E402
+import meshtastic as mesh  # noqa: E402
 
 BASE = os.path.dirname(os.path.abspath(__file__))
 CONFIG_FILE = os.path.join(BASE, "config.json")
@@ -210,6 +211,7 @@ class Station:
         self.scan_stats = {"cad": 0, "hits": 0, "pass_ms": None}
         self.combi = {"own_checks": 0, "own_hits": 0, "gap_max_ms": 0, "gap_avg_ms": None, "guard_ms": None,
                       "late": 0, "skipped": 0, "own_cost_ms": 8.0}
+        self.probe = {"active": False, "results": [], "started": None, "until": None, "sent": 0, "error": None}
         self._last_own = 0
         self._pass_t0 = time.monotonic()
         self.range_log = collections.deque(maxlen=20000)
@@ -308,6 +310,9 @@ class Station:
             now = time.monotonic()
             if now - self.devices_saved > 30:
                 self._save_devices()
+            if self.probe["active"]:
+                self._probe_step()
+                continue
             if self.mode == "sniff":
                 self._scan_step()
                 continue
@@ -518,9 +523,14 @@ class Station:
                 self._seen("gateway (join-accept) %.1f" % f, "LoRaWAN", "LoRaWAN-gateway (join-accept)", rssi, snr, f, sf)
                 return
         if sw == 0x2B and len(data) >= 16:
-            dest, sender = struct.unpack("<II", data[:8])
-            self._seen("Meshtastic !%08x" % sender, "Meshtastic", "Meshtastic-node", rssi, snr, f, sf,
-                       extra={"hop_limit": data[12] & 7, "channel_hash": "%02x" % data[13]})
+            info = mesh.decode(data) or {}
+            u = info.get("user") or {}
+            self._seen("Meshtastic %s" % info.get("from"), "Meshtastic",
+                       "Meshtastic-node" + (" (%s)" % u["long"] if u.get("long") else ""), rssi, snr, f, sf,
+                       extra={k: v for k, v in (("naam", u.get("long")), ("kort", u.get("short")),
+                                                ("hops", info.get("hops")), ("port", info.get("port")),
+                                                ("kanaal", "openbaar" if info.get("public") else "privé"))
+                              if v is not None})
             return
         self._seen("onbekend %.3f SF%d" % (f, sf), net or "?", "onbekend LoRa-pakket", rssi, snr, f, sf,
                    extra={"voorbeeld_hex": data[:24].hex()})
@@ -590,6 +600,77 @@ class Station:
         self.range_pending[self.seq] = rec
         if self.mode == "link":
             self.radio.rx_continuous()
+
+    # --- Meshtastic: "is er iemand?" -----------------------------------------
+    def _mesh_node(self):
+        mac = sh("cat /sys/class/net/wlan0/address") or "00:00:0a:0b:0c:0d"
+        return mesh.node_num_from_mac(mac)
+
+    def mesh_probe(self, listen_s=60):
+        """Zendt een NodeInfo met 'antwoord graag' op het openbare LongFast-kanaal en luistert daarna.
+        Meshtastic-nodes in bereik sturen hun eigen NodeInfo terug; routers sturen het ook door."""
+        listen_s = max(15, min(300, int(listen_s)))
+
+        def start():
+            c = self.cfg
+            params = dict(mesh.RADIO, power_dbm=c["power_dbm"])
+            b = band_for(params["freq_mhz"], params["bw"])
+            pkt, pid = mesh.build_nodeinfo(self._mesh_node(), c.get("node_name") and "roamcam-" + c["node_name"] or "roamcam",
+                                           ("RC" + (c.get("node_name") or "x")[:2]).upper())
+            at = airtime_ms(len(pkt), params["sf"], params["bw"], params["cr"], params["preamble"], True)
+            used = self.airtime_last_hour()
+            if c.get("enforce_duty", True) and b and used + at > b["duty_pct"] / 100 * 3600_000:
+                raise RuntimeError("duty-cycle van de 869,5-band vol; later opnieuw")
+            r = self.radio
+            r.standby()
+            r.configure(**params)
+            LD.flash("tx")
+            real = r.send(pkt)
+            self.tx_hist.append((time.monotonic(), at))
+            self.add_packet({"dir": "tx", "len": len(pkt), "hex": pkt.hex(), "airtime_ms": round(at, 1),
+                             "measured_ms": round(real, 1), "freq": params["freq_mhz"], "sf": params["sf"],
+                             "bw": params["bw"], "power_dbm": params["power_dbm"], "type": "meshtastic node-info",
+                             "text": "!%08x vraagt: is er iemand?" % self._mesh_node()})
+            r.rx_continuous()
+            now = time.time()
+            self.probe.update(active=True, results=[], started=now, until=now + listen_s, sent=1, error=None,
+                              pid=pid, node="!%08x" % self._mesh_node(), listen_s=listen_s)
+            return dict(self.probe)
+        return self.call(start)
+
+    def _probe_step(self):
+        r = self.radio
+        p = r.read_packet()
+        if p and "data" in p:
+            info = mesh.decode(p["data"]) if p.get("crc_ok") else {"note": "CRC-fout"}
+            if info:
+                info.update(rssi=p["rssi"], snr=p["snr"], time=time.time(), crc_ok=p.get("crc_ok"))
+                self.probe["results"].append(info)
+                LD.flash("vreemd")
+                if p.get("crc_ok") and info.get("from"):
+                    u = info.get("user") or {}
+                    self._seen("Meshtastic %s" % info["from"], "Meshtastic", "Meshtastic-node" +
+                               (" (%s)" % u.get("long") if u.get("long") else ""), p["rssi"], p["snr"],
+                               mesh.RADIO["freq_mhz"], mesh.RADIO["sf"],
+                               extra={k: v for k, v in (("naam", u.get("long")), ("kort", u.get("short")),
+                                                        ("hops", info.get("hops")), ("port", info.get("port")))
+                                      if v is not None})
+                self.add_packet({"dir": "rx", "rssi": p["rssi"], "snr": p["snr"], "crc_ok": p.get("crc_ok"),
+                                 "freq": mesh.RADIO["freq_mhz"], "sf": mesh.RADIO["sf"], "bw": mesh.RADIO["bw"],
+                                 "sync": 0x2B, "mode": "meshtastic-test", "len": len(p["data"]), "hex": p["data"].hex(),
+                                 "kind": "Meshtastic %s → %s: %s" % (info.get("from"), info.get("to"),
+                                                                  info.get("port") or info.get("note", ""))})
+            r.rx_continuous()
+        elif p:
+            r.rx_continuous()
+        if time.time() > self.probe["until"]:
+            self.probe["active"] = False
+            r.standby()
+            r.configure(**self.radio_params())
+            if self.mode == "link":
+                r.rx_continuous()
+            self._last_own = 0
+        time.sleep(0.005)
 
     def _beacon_payload(self):
         up = int(time.monotonic() - self.started)
@@ -860,6 +941,7 @@ class Station:
             "airtime_hour_ms": round(used, 1), "airtime_limit_ms": limit / 100 * 3600_000,
             "airtime_20b_ms": round(at1, 1), "mode": self.mode,
             "sniff_cur": getattr(self, "sniff_cur", None), "combi": self.combi,
+            "mesh_probe": dict(self.probe, remaining_s=max(0, int((self.probe["until"] or 0) - time.time()))),
             "radio": {"info": self.radio_info, "error": self.radio_error,
                       "rssi_now": self._rssi_safe()},
             "stats": dict(self.stats), "peers": list(self.peers.values()),
@@ -994,6 +1076,8 @@ class Handler(BaseHTTPRequestHandler):
             elif p == "/api/wifi/ap":
                 threading.Thread(target=WH.to_ap, args=("handmatig teruggezet",), daemon=True).start()
                 res = {"ok": True}
+            elif p == "/api/mesh/probe":
+                res = ST.mesh_probe(req.get("listen_s", 60))
             elif p == "/api/leds/test":
                 LD.color_test()
                 res = {"ok": True}

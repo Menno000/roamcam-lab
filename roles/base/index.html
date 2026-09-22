@@ -208,6 +208,14 @@ canvas{width:100%;height:220px;display:block}
     <span style="flex:1"></span>
     <button class="sec" onclick="clearDevices()">Lijst wissen</button>
   </div>
+  <div class="row">
+    <button onclick="meshProbe()" id="mesh-btn">Meshtastic: is er iemand?</button>
+    <label>luisteren (s)<input id="mesh-s" type="number" value="60" min="15" max="300" size="4"></label>
+    <span class="note" id="mesh-status">Zendt een openbare Meshtastic-groet op 869,525 MHz (LongFast) en luistert of nodes antwoorden. Het eigen kanaal ligt die tijd stil.</span>
+  </div>
+  <div class="tbl" id="mesh-res" style="display:none;margin-top:6px;max-height:220px"><table>
+    <thead><tr><th>tijd</th><th>van</th><th>naam</th><th>soort</th><th>hops</th><th>RSSI</th><th>SNR</th></tr></thead><tbody id="mesh-rows"></tbody></table>
+  </div>
   <div class="tbl" style="margin-top:8px"><table>
     <thead><tr><th>apparaat</th><th>netwerk</th><th>soort</th><th>gehoord</th><th>eerst</th><th>laatst</th><th>beste RSSI</th><th>laatste RSSI / SNR</th><th>kanalen</th><th>details</th></tr></thead>
     <tbody id="dev"></tbody>
@@ -383,6 +391,21 @@ async function saveLeds() {
   fillForm(res);
 }
 async function ledTest() { await post('/api/leds/test', {}, 'Kleurtest loopt: rood, groen, blauw'); }
+async function meshProbe() {
+  const r = await post('/api/mesh/probe', {listen_s: Number($('mesh-s').value)}, 'Meshtastic-groet verzonden, luistert…');
+}
+function renderMesh() {
+  const m = S.mesh_probe || {};
+  $('mesh-btn').disabled = !!m.active;
+  if (m.started) {
+    const n = (m.results || []).filter(r => r.crc_ok !== false).length;
+    $('mesh-status').textContent = m.active
+      ? `luistert nog ${m.remaining_s} s als ${m.node} · ${n} pakket(ten) gehoord`
+      : `laatste test ${fmtT(m.started)}: ${n ? n + ' Meshtastic-pakket(ten) gehoord' : 'geen enkele Meshtastic-node gehoord'}`;
+    $('mesh-res').style.display = (m.results || []).length ? '' : 'none';
+    $('mesh-rows').innerHTML = (m.results || []).map(r => `<tr><td>${fmtT(r.time)}</td><td>${esc(r.from || '')}</td><td>${esc(r.user ? r.user.long + ' (' + r.user.short + ')' : '')}</td><td>${esc(r.port || r.note || '')}${r.text ? ': ' + esc(r.text) : ''}</td><td>${r.hops ?? ''}</td><td>${r.rssi}</td><td>${r.snr}</td></tr>`).join('');
+  }
+}
 async function clearDevices() { if (!confirm('Lijst met gehoorde apparaten wissen?')) return; await post('/api/devices/clear', {}, 'Apparatenlijst gewist'); }
 async function clearLog() { await post('/api/clear', {}, 'Scherm leeggemaakt (logbestand blijft)'); $('pk').innerHTML = ''; }
 $('autoping').onchange = () => {
@@ -444,6 +467,7 @@ function render() {
       return `<tr><td>${net}</td><td>${(+f).toFixed(3)}</td><td>${bw}</td>` + sfs.map(sf => { const c = ch.find(x => x.net === net && x.f == f && x.bw == bw && x.sf === sf); return `<td>${c ? `<span style="color:${c.hits ? 'var(--warn)' : 'var(--mut)'}">${c.hits}</span>${c.pkts ? ` / <b style="color:var(--ok)">${c.pkts}</b>` : ''} <span class="note">van ${c.cad}</span>` : ''}</td>`; }).join('') + '</tr>';
     }).join('');
   } else $('chan').innerHTML = '<tr><td class="note">nog geen scangegevens</td></tr>';
+  renderMesh();
   const w = S.wifi;
   $('wifi-status').innerHTML = [
     ['Nu', w.mode === 'home' ? `<span style="color:var(--ok)">op thuisnetwerk ${esc(w.ssid)}</span>, adres <b>${w.ip}</b>` : `op eigen wifi (${S.hostname}), 192.168.0.10` + (w.clients ? ` · ${w.clients} verbonden` : '')],
