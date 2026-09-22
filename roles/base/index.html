@@ -169,7 +169,7 @@ canvas{width:100%;height:220px;display:block}
     <label>Node-naam<input id="node_name"></label>
     <label>Baken elke (s, 0=uit)<input id="beacon_s" type="number" min="0"></label>
     <label>Duty-cycle % (leeg=wettelijk)<input id="duty_pct" placeholder="auto"></label>
-    <label>Netwerksleutel<input id="net_key" type="password" placeholder="leeg = onversleuteld"></label>
+    <label>Netwerksleutel<input id="net_key" type="password" autocomplete="new-password" placeholder="leeg = ongewijzigd"></label>
   </div>
   <div class="row">
     <label class="chk"><input type="checkbox" id="enforce_duty"> duty-cycle-limiet handhaven</label>
@@ -179,6 +179,7 @@ canvas{width:100%;height:220px;display:block}
     <label class="chk"><input type="checkbox" id="echo_ping"> ping beantwoorden</label>
     <label class="chk"><input type="checkbox" id="raw_log"> vreemde pakketten loggen</label>
     <button onclick="saveCfg()">Opslaan</button>
+    <button class="sec" onclick="clearKey()">Sleutel wissen</button>
   </div>
   <div class="warnbox" id="legal"></div>
 </section>
@@ -256,7 +257,8 @@ const esc = s => String(s ?? '').replace(/[&<>]/g, c => ({'&': '&amp;', '<': '&l
 function fillForm(c) {
   const sf = $('sf'); sf.innerHTML = [5,6,7,8,9,10,11,12].map(v => `<option>${v}</option>`).join('');
   const bw = $('bw'); bw.innerHTML = [7.8,10.4,15.6,20.8,31.25,41.7,62.5,125,250,500].map(v => `<option>${v}</option>`).join('');
-  for (const k of ['freq_mhz','sf','bw','cr','power_dbm','preamble','node_id','node_name','beacon_s','net_key']) $(k).value = c[k];
+  for (const k of ['freq_mhz','sf','bw','cr','power_dbm','preamble','node_id','node_name','beacon_s']) $(k).value = c[k];
+  $('net_key').value = ''; $('net_key').placeholder = c.has_key ? 'ingesteld · leeg laten = ongewijzigd' : 'geen sleutel · onversleuteld';
   $('sync').value = '0x' + Number(c.sync).toString(16).toUpperCase();
   $('duty_pct').value = c.duty_pct ?? '';
   for (const k of ['enforce_duty','enforce_power','crc','invert_iq','echo_ping','raw_log']) $(k).checked = !!c[k];
@@ -273,6 +275,10 @@ async function saveCfg() {
   c.beacon_s = Number(c.beacon_s);
   const res = await post('/api/config', c, 'Instellingen opgeslagen en actief');
   fillForm(res);
+}
+async function clearKey() {
+  if (!confirm('Netwerksleutel wissen? Dan gaat alles onversleuteld, en deze unit verstaat de andere niet meer tot die ook gewist is.')) return;
+  fillForm(await post('/api/config', {net_key_clear: true}, 'Sleutel gewist, versleuteling uit'));
 }
 async function applyPreset() { const res = await post('/api/preset', {name: $('preset').value}, 'Voorinstelling geladen'); fillForm(res); }
 async function ping() { await post('/api/ping', {dst: $('dst').value}, 'Ping verzonden'); }
@@ -447,7 +453,7 @@ function render() {
     ['Zendtijd 20 B', S.airtime_20b_ms + ' ms per pakket'],
     ['Ontvangen', `${st.rx_eigen || 0} eigen · ${st.rx_vreemd || 0} vreemd · ${st.rx_crc_fout || 0} CRC-fout · ${st.rx_header_fout || 0} headerfout`],
     ['Verzonden', `${st.tx || 0}` + (st.baken_overgeslagen ? ` · ${st.baken_overgeslagen} baken overgeslagen (limiet)` : '')],
-    ['Versleuteling', c.net_key ? 'aan (SHA-256-CTR + HMAC)' : 'uit'],
+    ['Versleuteling', c.has_key ? 'aan (SHA-256-CTR + HMAC)' : 'uit'],
     ['Klok', fmtT(S.time)],
   ].map(([k, v]) => `<div>${k}</div><div>${v}</div>`).join('');
   const pct = Math.min(100, S.airtime_hour_ms / S.airtime_limit_ms * 100);

@@ -684,6 +684,11 @@ class Station:
     def apply_config(self, new):
         allowed = set(DEFAULTS) | {"sniff_dwell_s"}
         clean = {k: v for k, v in new.items() if k in allowed}
+        # De sleutel gaat nooit terug naar de browser, dus een leeg veld betekent "ongewijzigd".
+        if clean.get("net_key") in ("", None):
+            clean.pop("net_key", None)
+        if new.get("net_key_clear"):
+            clean["net_key"] = ""
         if "bw" in clean and float(clean["bw"]) not in BW_CODE:
             raise ValueError("bandbreedte moet een van %s zijn" % sorted(BW_CODE))
         for k in ("sf", "cr", "preamble", "power_dbm", "node_id", "sync"):
@@ -718,7 +723,7 @@ class Station:
             if self.mode == "link":
                 self.radio.standby()
                 self.radio.configure(**self.radio_params())
-            return self.cfg
+            return public_cfg(self.cfg)
         return self.call(do)
 
     def set_mode(self, mode):
@@ -765,7 +770,7 @@ class Station:
             pk = [p for p in self.packets if p["id"] > since]
         at1 = airtime_ms(20, c["sf"], c["bw"], c["cr"], c["preamble"], c["crc"])
         return {
-            "cfg": c, "band": self.band(), "duty_limit_pct": limit,
+            "cfg": public_cfg(c), "band": self.band(), "duty_limit_pct": limit,
             "airtime_hour_ms": round(used, 1), "airtime_limit_ms": limit / 100 * 3600_000,
             "airtime_20b_ms": round(at1, 1), "mode": self.mode,
             "sniff_cur": getattr(self, "sniff_cur", None),
@@ -787,6 +792,13 @@ class Station:
             return self.radio.rssi_now() if self.radio and self.mode == "link" else None
         except Exception:  # noqa: BLE001
             return None
+
+
+def public_cfg(cfg):
+    """Instellingen voor buiten de unit: zonder de netwerksleutel zelf."""
+    out = dict(cfg)
+    out["has_key"] = bool(out.pop("net_key", ""))
+    return out
 
 
 def ptype_is_ping(info):
