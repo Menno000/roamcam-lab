@@ -59,11 +59,40 @@ Zonder GPS-fix valt hij vanzelf terug op een tijdinterval.
 - Ongeveer **7 MB per kilometer** bij 50 meter interval — ruim 3000 km in de vrije ruimte van een
   standaard toestel
 
-### 📡 Basisstation — *gepland*
+### 📡 Basisstation — *de radio werkt, het bereik niet*
 
-Een vaste unit thuis die de auto via LoRa opvangt en doorgeeft aan Home Assistant. Twee SX1262's
-die rechtstreeks met elkaar praten — geen LoRaWAN-provider, geen abonnement, geen dekkingskaart.
-"Auto is nog twee kilometer weg" is genoeg om een garagedeur te openen.
+Een vaste unit thuis die de auto via LoRa opvangt. Twee SX1262's die rechtstreeks met elkaar praten
+— geen LoRaWAN-provider, geen abonnement, geen dekkingskaart, niets om je voor aan te melden.
+
+**Wat er is, en gemeten** (op twee HDC's, september 2026):
+
+- Eigen SX1262-driver, zonder de LoRaWAN-stack van de fabrikant ertussen. 100% ontvangst over
+  SF7 t/m SF12 bij BW125/250, in beide richtingen, met een gemeten zendtijd die tot op 1–2 ms met
+  de formule overeenkomt
+- Versleutelde link met authenticatie; een verkeerde sleutel wordt als `auth=False` gemeld en niet
+  stil geaccepteerd
+- EU-duty-cycle-grenzen worden getoond en standaard gehandhaafd, en zijn uit te zetten — eigen
+  zender, eigen verantwoordelijkheid. Dat handhaven werkt aantoonbaar: een pong werd geweigerd
+  toen het 1%-budget op was
+- Zendvermogen loopt lineair van −9 tot **21 dBm**. 22 dBm is reproduceerbaar ~3 dB *zwakker* dan
+  21 — de eindversterker verzadigt op dit bord, dus 21 dBm is het praktische maximum
+- Combi-modus: bewaakt het eigen kanaal elke 40–50 ms en scant daartussen andere kanalen
+  (gemeten: 18/18 pings beantwoord, 0,08% van de controles te laat)
+- Bereiktest met GPS-posities, een RSSI/SNR-log en een kaart; LED-terugkoppeling per unit
+- De kristallen van de twee units schelen ongeveer 5,35 kHz (≈6 ppm), stabiel — geen probleem bij
+  BW ≥ 62,5 kHz
+
+**Wat nog niet werkt, eerlijk: het bereik in de auto.** Over 643 positiepings op een echte rit was
+de verste beantwoorde ping **21 meter**, en de basis hoorde de auto tot 29 m. Op 21 m was het
+signaal −46 tot −51 dBm — zo'n 70 dB marge, in theorie goed voor kilometers — en daarna niets. Dat
+patroon past niet bij afscherming: dat zou overal een zwak signaal geven, niet een sterk signaal
+met een klif erachter. **De oorzaak is onbekend en wordt nog uitgezocht.**
+
+Ook nog onbewezen: de scanner heeft nog nooit een pakket van een vreemd LoRa-apparaat kunnen
+decoderen, en 446 Meshtastic-groeten leverden geen antwoord van een echte Meshtastic-node op.
+Unit-naar-unit werkt; samenwerken met andermans apparatuur niet.
+
+De code staat in [`roles/base/`](roles/base). Doorgeven aan Home Assistant moet nog.
 
 ### 🏠 Home Assistant-camera — *gepland*
 
@@ -104,17 +133,29 @@ Verwijderen: `sh uninstall.sh`.
 
 ## Stand van zaken
 
-De rol Reis is af en op hardware nagelopen: de opnamelus, film maken, GPX-export, de offline kaart,
-klok gelijkzetten via GPS, en het overleven van een herstart. De andere drie rollen zijn ontworpen
-maar nog niet gebouwd.
+**Reis** is af en op hardware nagelopen: de opnamelus, film maken, GPX-export, de offline kaart,
+klok gelijkzetten via GPS, en het overleven van een herstart.
+
+**Basisstation** is gebouwd en de radio is op twee units bewezen — maar het bereik in de auto is
+niet opgelost, en dat staat hierboven eerlijk beschreven. De Home Assistant-camera en de
+achtercamera zijn ontworpen en nog niet gebouwd.
+
+Beide rollen delen een kern (`roles/core/roamcam_core.py`) met **46 tests die zonder camera
+draaien**. De AES-128 daarin wordt getoetst aan de officiële vectoren uit FIPS-197 en NIST
+SP 800-38A in plaats van aan onze eigen eerdere uitkomst, want die code versleutelt echte pakketten
+op twee toestellen.
 
 **Bekende beperkingen, eerlijk:**
 
-- De interface van Reis is voorlopig **alleen Nederlands**. Engels staat op de roadmap.
-- De gedeelde kern is nog niet losgetrokken. Met één rol zou je de juiste indeling toch gokken; dat
-  gebeurt zodra de tweede rol er is.
+- De interfaces zijn voorlopig **alleen Nederlands**. Engels staat op de roadmap.
+- Het bereik over LoRa stort in na ongeveer 20 meter in een auto, om redenen die we nog niet
+  begrijpen. De radio zelf meet goed.
+- De scanner heeft nog nooit een pakket van andermans LoRa-apparaat kunnen decoderen, en er heeft
+  nog nooit een echte Meshtastic-node geantwoord. Unit-naar-unit werkt; samenwerken niet.
 - De koude start van de GPS is niet gemeten met echte stroomonderbrekingen. Zie het GNSS-hoofdstuk
   in [docs/VENDOR-FIRMWARE.md](docs/VENDOR-FIRMWARE.md) voor wat we wel en niet weten.
+- mDNS (`<hostnaam>.local`) werkt op onze camera's, maar niet gegarandeerd op die van jou — zie
+  Installeren.
 
 ---
 

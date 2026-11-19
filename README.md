@@ -60,11 +60,37 @@ light doesn't eat half your film and the result plays at an even pace whether yo
 - About **7 MB per kilometre** at a 50 m interval — roughly 3000 km in the free space on a stock
   device
 
-### 📡 Base station — *planned*
+### 📡 Base station — *the radio works; the range does not*
 
-A fixed unit at home that listens for the car over LoRa and pushes what it hears into Home
-Assistant. Two SX1262 radios talking to each other directly — no LoRaWAN provider, no subscription,
-no coverage map. "Car is two kilometres away" is enough to open a garage door.
+A fixed unit at home that listens for the car over LoRa. Two SX1262 radios talking to each other
+directly — no LoRaWAN provider, no subscription, no coverage map, nothing to sign up for.
+
+**What is built and measured** (on two HDCs, September 2026):
+
+- Own SX1262 driver, no vendor LoRaWAN stack in the way. 100% reception across SF7–SF12 at
+  BW125/250, both directions, with measured airtime matching the formula to within 1–2 ms
+- Encrypted link with authentication; a wrong key is reported as `auth=False` rather than silently
+  accepted
+- EU duty-cycle limits shown and enforced by default, and switchable off — your transmitter, your
+  responsibility. Enforcement demonstrably works: a pong was refused when the 1% budget was spent
+- Transmit power is linear from −9 to **21 dBm**. 22 dBm is reproducibly ~3 dB *weaker* than 21 —
+  the PA saturates on this board, so 21 dBm is the practical maximum
+- Combi mode: guards its own channel every 40–50 ms while scanning other channels in between
+  (measured: 18/18 pings answered, 0.08% of guard checks late)
+- Range test with GPS positions, an RSSI/SNR log and a map; LED feedback per unit
+- The two units' crystals differ by about 5.35 kHz (≈6 ppm), stable — fine for BW ≥ 62.5 kHz
+
+**What does not work yet, honestly:** range in a car. Over 643 position pings on a real drive, the
+furthest answered ping was **21 metres**, and the base heard the car up to 29 m. At 21 m the signal
+was −46 to −51 dBm — roughly 70 dB of margin, in theory good for kilometres — and then nothing. That
+pattern does not fit shielding, which would give a weak signal everywhere rather than a strong one
+with a cliff behind it. **The cause is unknown and under investigation.**
+
+Also still unproven: the scanner has never decoded a packet from a foreign LoRa device, and 446
+Meshtastic greetings produced no answer from a real Meshtastic node. Unit-to-unit works; interop
+does not.
+
+Code lives in [`roles/base/`](roles/base). Home Assistant forwarding is still to do.
 
 ### 🏠 Home Assistant camera — *planned*
 
@@ -105,17 +131,28 @@ To remove: `sh uninstall.sh`.
 
 ## Status
 
-The Trip role is finished and verified on hardware: the capture loop, film assembly, GPX export,
-the offline map, GPS clock sync, and surviving a reboot. The other three roles are designed but not
-built.
+**Trip** is finished and verified on hardware: the capture loop, film assembly, GPX export, the
+offline map, GPS clock sync, and surviving a reboot.
+
+**Base station** is built and its radio is proven on two units — but the range in a car is not
+solved, and that is written up honestly above. The Home Assistant camera and the rear camera are
+designed and not built.
+
+The two roles share a core (`roles/core/roamcam_core.py`) with **46 tests that run without a
+camera**. The AES-128 in it is checked against the official vectors from FIPS-197 and NIST
+SP 800-38A rather than against our own earlier output, because that code encrypts real packets on
+two devices.
 
 **Known limitations, honestly:**
 
-- The Trip interface is **Dutch only** for now. English is on the roadmap.
-- The shared core hasn't been factored out yet. With one role implemented, guessing at the right
-  abstraction would be premature — it gets extracted when the second role lands.
+- The interfaces are **Dutch only** for now. English is on the roadmap.
+- Range over LoRa collapses after about 20 metres in a car, for reasons we do not yet understand.
+  The radio itself measures fine.
+- The scanner has never decoded a packet from someone else's LoRa device, and no real Meshtastic
+  node has ever answered. Unit-to-unit works; interop is unproven.
 - Cold-start GPS timing has not been measured with real power cuts. See the GNSS section of
   [docs/VENDOR-FIRMWARE.md](docs/VENDOR-FIRMWARE.md) for what we know and what we don't.
+- mDNS (`<hostname>.local`) works on our cameras but is not guaranteed on yours — see Install.
 
 ---
 

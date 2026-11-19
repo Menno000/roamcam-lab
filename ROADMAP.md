@@ -19,21 +19,38 @@ Working and verified on hardware. Remaining polish:
 - [ ] Music or a title card on the assembled film
 - [ ] Faster GPS cold start — see below
 
-## 📡 Base station — designed, not built
+## 📡 Base station — built; the radio works, the range does not
 
-A fixed unit at home that receives from the car over LoRa and forwards to Home Assistant.
+A fixed unit at home that receives from the car over LoRa. Code in [`roles/base/`](roles/base).
 
-- [ ] Direct SX1262 ↔ SX1262 link, private sync word `0x1424`, no LoRaWAN in the way
-- [ ] Kill `lorawan-logger` first — it holds the radio
-- [ ] Decide what the car actually sends: position, speed, ignition state, a "coming home" ping
-- [ ] Range test in the real world. Expect 1–3 km built-up, more with line of sight. The antenna
-      sits inside a closed housing with an unknown ground plane, so measure, don't assume
+Done and measured on two HDCs:
+
+- [x] Own SX1262 driver, no LoRaWAN stack in the way. `lorawan-logger` masked; the vendor
+      `datalogger` also claims the LoRa GPIOs through sysfs, so unexport them first
+- [x] Link proven both directions, 100% reception across SF7–SF12 at BW125/250
+- [x] Encryption with authentication; duty-cycle enforcement, demonstrably refusing to transmit
+      when the 1% budget is spent
+- [x] 21 dBm is the practical maximum — 22 dBm measures ~3 dB weaker (PA saturation)
+- [x] Combi mode: guard the own channel while scanning in between
+- [x] Range test with GPS positions, RSSI/SNR log and a map; per-unit LED feedback
+- [x] Own Wi-Fi handling so the unit sits on the home network instead of its own access point
+
+Open, and this is the one that matters:
+
+- [ ] **Find out why the range collapses.** Furthest answered ping in a car: 21 m, with ~70 dB of
+      margin at that distance. Not a power or sensitivity problem; cause unknown. Next test is the
+      cheap one: walk away on foot in 25 m steps and watch LED 2
+- [ ] Decode a packet from a foreign LoRa device — never managed yet
+- [ ] Get an answer from a real Meshtastic node — 446 greetings, zero replies. Unit-to-unit works,
+      interop is unproven
 - [ ] MQTT out to Home Assistant, with discovery so entities appear by themselves
-- [ ] Radio-first interface: signal strength, last packet, who's in range, live log
+- [ ] Decide what the car should actually send in a few dozen bytes: position, speed, ignition
+      state, a "coming home" ping
+- [ ] Anonymise the Meshtastic greeting: a neutral name and a random node ID per trip
 
-Why this one matters: LoRa has never been demonstrably working on either radio backend, and the
-likely reason is simply that there was never a second node to talk to. Two of our own units remove
-every variable — no provider, no coverage question, no join procedure.
+What this already settled: LoRa had never demonstrably worked on either radio backend, and the
+reason turned out to be exactly what we suspected — there was never a second node to talk to. Two
+of our own units removed every variable, and the radio answered immediately.
 
 ## 🏠 Home Assistant camera — designed, not built
 
