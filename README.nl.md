@@ -93,8 +93,10 @@ Het installatiescript vraagt welke rol je wilt, zet die op `/mnt/data` en meldt 
 `cron_config` van de firmware zelf, zodat hij bij het opstarten begint en zichzelf terugzet als hij
 ooit omvalt. Geen systemd-unit — die overleeft op dit toestel geen herstart.
 
-Daarna open je **`http://<ip-van-de-camera>:8080`**, of `http://<hostnaam>.local:8080` (mDNS werkt
-op deze camera's al vanzelf).
+Daarna open je **`http://<ip-van-de-camera>:8080`**. Op veel van deze camera's werkt
+`http://<hostnaam>.local:8080` ook, omdat `avahi-daemon` draait — maar reken er niet op: `avahi`
+staat alleen in de *dev*-defconfigs van de publieke firmware, dus een camera met een andere build
+heeft het misschien niet. Het IP werkt altijd.
 
 Verwijderen: `sh uninstall.sh`.
 

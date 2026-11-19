@@ -96,13 +96,33 @@ somewhere to go — which also answers the eMMC-wear worry above.
 The device ships with object-detection models: `n800_1x2_float16.tflite` and
 `n800_2x2_float16.tflite` in `/opt/dashcam/bin/`. Hivemapper uses them for blurring.
 
-Reading plates from a *moving car* is not realistic on a CM4 — the geometry changes constantly, the
-resolution at distance is marginal, and you have milliseconds. Reading plates on a **driveway** is a
-different problem entirely: fixed camera, known distance, a car that stops. That is a solvable
-problem, and it is the one worth attempting.
+**The detection half is already solved, and it already runs here.** Reading `detect_hdc.py` settles
+what these models do: a YOLOv8-style detector (`n800` ≈ yolov8n at 800px) through `tflite_runtime`,
+taking the same 2028×1024 frames that sit in RAM, packing two or four of them into one grid, and
+blurring every box it finds. Since blurring is the purpose, the classes are what Hivemapper hides:
+faces and licence plates. The config confirms it — `PrivacyConfThreshold`, `PrivacyNmsThreshold`,
+`modelHashes: {PVC: ...}`.
 
-- ✅ Models are on the device
-- ❓ What they actually detect, and whether anything usable can be built on them
+So *finding* a plate in the frame is a solved problem on this hardware. What is missing is *reading*
+the characters, which is a different job (OCR) and the part nobody has built.
+
+Measured cost: a median of **1,869 ms per frame** of inference, with outliers to 33 seconds (141
+measurements from the vendor's own `DashcamML` events, divided by frame count in `packaging.ts`).
+That is per frame, so this is not something to run on a live 10 fps stream — it belongs on single
+frames, triggered by something.
+
+Reading plates from a *moving car* therefore stays unrealistic: the geometry changes constantly,
+resolution at distance is marginal, and two seconds per frame is not a budget you have. On a
+**driveway** it is a different problem: fixed camera, known distance, a car that stops, and you can
+afford two seconds. That is the one worth attempting.
+
+- ✅ Models are on the device, and also in the public firmware repo (12 MB for the pair), so you can
+  inspect them without a camera
+- ✅ They detect faces and plates, for blurring — `detect_hdc.py`
+- ✅ `cv2` (OpenCV), `numpy` and `tflite_runtime` are available on the device, which also makes
+  motion detection much easier than expected
+- ❓ Whether the detector is accurate enough on a plate at driveway distance, and what to use for the
+  OCR step
 
 ## 💡 The LEDs as an information channel
 

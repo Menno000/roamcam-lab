@@ -94,8 +94,10 @@ The installer asks which role you want, copies it to `/mnt/data`, and registers 
 firmware's own `cron_config` so it starts at boot and restarts itself if it ever dies. No systemd
 unit — those don't survive a reboot on this device.
 
-Then open **`http://<device-ip>:8080`**, or `http://<hostname>.local:8080` (mDNS already works on
-these cameras).
+Then open **`http://<device-ip>:8080`**. On many of these cameras `http://<hostname>.local:8080`
+also works, because `avahi-daemon` is running — but don't count on it: `avahi` appears only in the
+*dev* defconfigs of the public firmware, so a camera with a different build may not have it. The IP
+always works.
 
 To remove: `sh uninstall.sh`.
 
