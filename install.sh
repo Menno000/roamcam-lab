@@ -37,13 +37,19 @@ if [ ! -f "$SRC/roles/$ROLE/travel_server.py" ]; then
   echo "ERROR: roles/$ROLE/travel_server.py not found next to install.sh." >&2
   exit 1
 fi
+if [ ! -f "$SRC/roles/core/roamcam_core.py" ]; then
+  echo "ERROR: roles/core/roamcam_core.py not found. Every role needs the shared core." >&2
+  exit 1
+fi
 
-# ---- the app -> persistent storage. Only /mnt/data survives a reboot on this device;
-#      everything else is a RAM overlay.
+# ---- the app and the shared core -> persistent storage. Only /mnt/data survives a reboot on
+#      this device; everything else is a RAM overlay. The core goes in /mnt/data because that
+#      is the first place every role looks for it.
+cp "$SRC/roles/core/roamcam_core.py" "$DATA/roamcam_core.py"
 cp "$SRC/roles/$ROLE/travel_server.py" "$DATA/travel_server.py"
 cp "$SRC/roles/$ROLE/roamcam_travel.sh" "$DATA/roamcam_travel.sh"
 chmod +x "$DATA/roamcam_travel.sh"
-echo "  installed role '$ROLE'"
+echo "  installed role '$ROLE' + roamcam_core.py"
 
 # ---- autostart. The firmware reads /mnt/data/cron_config at boot and runs what's listed.
 #      One entry starts it immediately, one acts as a watchdog every 60s.

@@ -40,3 +40,7 @@ esac
 systemctl restart camera-node 2>/dev/null || true
 echo ""
 echo "Done. The stock firmware is untouched — it was never modified."
+echo ""
+echo "Note: $DATA/roamcam_core.py is left in place on purpose. If Roamcam or another role is"
+echo "also installed on this camera, it needs that same file. Remove it only if nothing else"
+echo "uses it."
