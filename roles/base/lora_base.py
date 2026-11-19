@@ -15,9 +15,17 @@ import json
 import os
 import queue
 import struct
-import subprocess
 import sys
 import threading
+
+# De kern staat op het toestel in /mnt/data en in de repo naast deze map.
+for _p in ("/mnt/data",
+           os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "core"),
+           os.path.dirname(os.path.abspath(__file__))):
+    if os.path.exists(os.path.join(_p, "roamcam_core.py")) and _p not in sys.path:
+        sys.path.insert(0, _p)
+import roamcam_core as core  # noqa: E402
+
 import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
@@ -171,15 +179,8 @@ def band_for(freq, bw_khz):
 
 
 def sh(cmd, timeout=10):
-    # Timeout instelbaar gehouden: dezelfde functie bestaat in dashboard_server.py,
-    # travel_server.py en wifi_home.py, en daar kostte een vaste korte timeout ons eerder
-    # een avond -- een wifi-scan duurt regelmatig langer en gaf dan stil een leeg resultaat,
-    # wat zich voordeed als "geen netwerken gevonden". Hier was de 10 s hard ingebakken.
-    try:
-        return subprocess.run(cmd, shell=True, capture_output=True, text=True,
-                              timeout=timeout).stdout.strip()
-    except Exception as e:  # noqa: BLE001
-        return "ERR %s" % e
+    """Zie de kern: die breekt bij een timeout de hele procesgroep af, wat hier nodig is."""
+    return core.sh(cmd, timeout)
 
 
 class Station:

@@ -14,8 +14,16 @@ import hashlib
 import json
 import os
 import re
-import subprocess
+import sys
 import time
+
+# De kern staat op het toestel in /mnt/data en in de repo naast deze map.
+for _p in ("/mnt/data",
+           os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "core"),
+           os.path.dirname(os.path.abspath(__file__))):
+    if os.path.exists(os.path.join(_p, "roamcam_core.py")) and _p not in sys.path:
+        sys.path.insert(0, _p)
+import roamcam_core as core  # noqa: E402
 
 STA_CONF = "/etc/wpa_supplicant-sta.conf"
 AP_DHCPCD = "/opt/dashcam/cfg/AP_dhcpcd.conf"
@@ -27,10 +35,13 @@ MIN_SIGNAL_DBM = -80
 
 
 def sh(cmd, timeout=30):
-    try:
-        return subprocess.run(cmd, shell=True, capture_output=True, text=True, timeout=timeout).stdout
-    except Exception as e:  # noqa: BLE001
-        return "ERR %s" % e
+    """Dertig seconden, want een wifi-scan heeft die nodig. Zie de kern waarom dat uitmaakt.
+
+    Belangrijk voor dit bestand: de opdrachten hieronder hebben vaak kleinkinderen -- ketens met
+    een puntkomma en omleidingen naar /dev/null. De oude implementatie met
+    `subprocess.run(timeout=)` brak die niet af en kon dus blijven hangen voorbij de timeout.
+    """
+    return core.sh(cmd, timeout)
 
 
 class WifiHome:
