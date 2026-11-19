@@ -84,15 +84,33 @@ lever is fresh orbit data, not remembered position.
       exactly where you need it: under trees, in a car park
 - [ ] Measure it properly, with the plug. A software reboot proves nothing here
 
-### Shared core
+### Shared core — done
 
-Extract the common parts — RAM frame buffer access, GPS/IMU reading, config storage, autostart, the
-web shell — once the second role exists and there is something real to share. Not before.
+`roles/core/roamcam_core.py`, with `roles/core/test_core.py`: **46 tests that run without a
+camera**, in under three seconds. One file, standard library only, and no hard-coded device paths
+where it can be avoided — that is what makes it testable on a laptop.
 
-The installer currently hard-codes the trip role's filenames rather than treating roles
-generically. Same reasoning: it gets generalised alongside the core, when there is a second role to
-generalise *against*. Changing the deployed filenames now would mean re-testing a working install
-on hardware for no gain.
+It holds `sh`, the file and JSON helpers, settings per section, `haversine`, AES-128 with CTR, the
+clock and time-zone handling, and reading along with the vendor (`gps_read`, `gps_is_live`,
+`gps_has_fix`, `newest_frame`).
+
+Two things are worth knowing about it:
+
+- **The AES is checked against the official vectors** — FIPS-197 appendix B and C.1, NIST
+  SP 800-38A F.5.1 — and not against our own earlier output. There used to be two hand-written
+  copies of it, encrypting real packets on two devices; a mistake in one half would never have
+  shown up while the other half worked.
+- **Never use `subprocess.run(..., timeout=)` in this project again.** It does not honour its own
+  timeout: it kills only the shell, a grandchild stays alive holding the pipes, and `run()` then
+  waits for it anyway. Measured: a 1 second timeout on a 5 second command answered after 5.1
+  seconds. All four of the old copies had this. The core starts its own process group and kills
+  the whole group.
+
+Still open:
+
+- [ ] Generalise the installer; it still hard-codes the trip role's filenames
+- [ ] Run all of this on real hardware. The tests cover the core and old-versus-new comparisons
+      cover the behaviour, but nothing here has run on a camera yet
 
 ### Wi-Fi
 
