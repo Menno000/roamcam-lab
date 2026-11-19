@@ -170,9 +170,14 @@ def band_for(freq, bw_khz):
     return None
 
 
-def sh(cmd):
+def sh(cmd, timeout=10):
+    # Timeout instelbaar gehouden: dezelfde functie bestaat in dashboard_server.py,
+    # travel_server.py en wifi_home.py, en daar kostte een vaste korte timeout ons eerder
+    # een avond -- een wifi-scan duurt regelmatig langer en gaf dan stil een leeg resultaat,
+    # wat zich voordeed als "geen netwerken gevonden". Hier was de 10 s hard ingebakken.
     try:
-        return subprocess.run(cmd, shell=True, capture_output=True, text=True, timeout=10).stdout.strip()
+        return subprocess.run(cmd, shell=True, capture_output=True, text=True,
+                              timeout=timeout).stdout.strip()
     except Exception as e:  # noqa: BLE001
         return "ERR %s" % e
 
