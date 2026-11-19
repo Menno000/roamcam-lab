@@ -29,9 +29,17 @@ import os
 import re
 import shutil
 import socketserver
-import subprocess
+import sys
 import threading
 import time
+
+# De kern staat op het toestel in /mnt/data en in de repo naast deze map.
+for _p in ("/mnt/data",
+           os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "core"),
+           os.path.dirname(os.path.abspath(__file__))):
+    if os.path.exists(os.path.join(_p, "roamcam_core.py")) and _p not in sys.path:
+        sys.path.insert(0, _p)
+import roamcam_core as core  # noqa: E402
 from urllib.parse import urlparse, parse_qs, unquote
 
 PORT = 8080
@@ -100,11 +108,12 @@ def log(msg):
 
 
 def sh(cmd, timeout=10):
-    try:
-        r = subprocess.run(cmd, shell=True, capture_output=True, text=True, timeout=timeout)
-        return r.stdout.strip()
-    except Exception:
-        return ""
+    """Gaat via de gedeelde kern, die bij een timeout de hele procesgroep afbreekt.
+
+    De oude versie hier gebruikte `subprocess.run(timeout=)` en die houdt zich niet aan zijn
+    eigen timeout zodra de opdracht kleinkinderen heeft -- zoals onze ffmpeg-ketens.
+    """
+    return core.sh(cmd, timeout)
 
 
 def load_cfg():
@@ -131,11 +140,7 @@ def save_cfg():
 
 def apply_tz():
     """Zonder dit staat alles in UTC en kloppen de tijden in de rittenlijst niet."""
-    try:
-        os.environ["TZ"] = cfg.get("tz") or "UTC"
-        time.tzset()
-    except Exception:
-        pass
+    core.apply_tz(cfg.get("tz"))
 
 
 def free_mb(path=BASE):
@@ -162,38 +167,23 @@ def dir_size(path):
 # ---------------------------------------------------------------- klok
 
 def clock_save():
-    try:
-        open(CLOCK_PATH, "w").write(str(int(time.time())))
-    except Exception:
-        pass
+    core.clock_save(CLOCK_PATH)
 
 
 def clock_restore():
     """De HDC heeft geen RTC-batterij: na stroomloos starten staat hij in 2022. Eerst de
     laatst bekende tijd terugzetten zodat logs en mapnamen niet in het verleden belanden;
     zodra de GPS een fix heeft nemen we die tijd over (die is exact)."""
-    try:
-        was = int(open(CLOCK_PATH).read().strip())
-        if was > time.time():
-            sh("date -s @%d" % was)
-            log("klok teruggezet naar bewaarde tijd")
-    except Exception:
-        pass
+    if core.clock_restore(CLOCK_PATH):
+        log("klok teruggezet naar bewaarde tijd")
 
 
 def gps_is_live():
     """latest.log blijft na een herstart gewoon staan met de gegevens van vóór het uitzetten.
-    Vlak na het opstarten lees je dus oude tijd en oude positie. Twee keer lezen en eisen dat
-    het tijdstempel verandert bewijst dat de datalogger echt aan het schrijven is."""
-    a = gps_read()
-    if not a:
-        return None
-    for _ in range(6):
-        time.sleep(0.4)
-        b = gps_read()
-        if b and b.get("timestamp") != a.get("timestamp"):
-            return b
-    return None
+    Vlak na het opstarten lees je dus oude tijd en oude positie. De kern leest twee keer en
+    eist dat het tijdstempel verandert; onze eigen lezer gaat mee, want die verrijkt de regel
+    met fix_ok, kmh en het aantal satellieten."""
+    return core.gps_is_live(GPS_LOG, reader=lambda _p: gps_read())
 
 
 def clock_from_gps(gp):
@@ -206,7 +196,7 @@ def clock_from_gps(gp):
         # timegm en niet mktime: de GPS-tijd is UTC, mktime zou hem als lokale tijd lezen
         want = calendar.timegm(time.strptime(" ".join(m.groups()), "%Y %m %d %H %M %S"))
         if abs(want - time.time()) > 5:
-            sh("date -u -s '%s-%s-%s %s:%s:%s'" % m.groups())
+            core.clock_set_utc(want)
             log("klok gelijkgezet met GPS")
             clock_save()
             return True
@@ -242,13 +232,8 @@ def imu_read():
         return None
 
 
-def haversine(a, b, c, d):
-    r = 6371000.0
-    p1, p2 = math.radians(a), math.radians(c)
-    dp = math.radians(c - a)
-    dl = math.radians(d - b)
-    h = math.sin(dp / 2) ** 2 + math.cos(p1) * math.cos(p2) * math.sin(dl / 2) ** 2
-    return 2 * r * math.asin(min(1.0, math.sqrt(h)))
+# Afstand in meters, argumenten lat, lon, lat, lon -- uit de gedeelde kern.
+haversine = core.haversine
 
 
 # ---------------------------------------------------------------- beeld

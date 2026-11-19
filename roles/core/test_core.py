@@ -335,6 +335,38 @@ class TestVendor(unittest.TestCase):
     def test_ontbrekend_gps_bestand(self):
         self.assertIsNone(core.gps_is_live(os.path.join(self.map, "weg"), tries=2, pause=0.01))
 
+    def test_eigen_lezer_wordt_gebruikt(self):
+        # de reis-rol verrijkt zijn GPS-regel met fix_ok, kmh en satellieten
+        p = os.path.join(self.map, "latest.log")
+        core.save_json(p, {"timestamp": "t0"})
+        aanroepen = []
+
+        def mijn_lezer(pad):
+            aanroepen.append(pad)
+            d = core.gps_read(pad)
+            if d:
+                d["verrijkt"] = True
+            return d
+
+        # tijdstempel verandert nooit -> None, maar de eigen lezer moet wel gebruikt zijn
+        self.assertIsNone(core.gps_is_live(p, tries=2, pause=0.01, reader=mijn_lezer))
+        self.assertTrue(len(aanroepen) >= 2)
+        self.assertEqual(aanroepen[0], p)
+
+    def test_eigen_lezer_geeft_verrijkte_regel_terug(self):
+        p = os.path.join(self.map, "latest.log")
+        core.save_json(p, {"timestamp": "t0"})
+
+        teller = {"n": 0}
+
+        def mijn_lezer(pad):
+            teller["n"] += 1
+            return {"timestamp": "t%d" % teller["n"], "verrijkt": True}
+
+        vers = core.gps_is_live(p, tries=3, pause=0.01, reader=mijn_lezer)
+        self.assertIsNotNone(vers)
+        self.assertTrue(vers["verrijkt"])
+
 
 class TestKopieGelijk(unittest.TestCase):
     """De repo roamcam draagt een kopie van dit bestand. Die moet byte-identiek zijn."""
