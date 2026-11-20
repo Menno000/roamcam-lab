@@ -12,6 +12,7 @@ toestellen, en "het werkte gisteren ook" is geen bewijs.
 import json
 import os
 import shutil
+import subprocess
 import sys
 import tempfile
 import threading
@@ -369,20 +370,43 @@ class TestVendor(unittest.TestCase):
 
 
 class TestKopieGelijk(unittest.TestCase):
-    """De repo roamcam draagt een kopie van dit bestand. Die moet byte-identiek zijn."""
+    """De repo roamcam draagt een kopie van dit bestand. Die moet byte-identiek zijn.
 
-    def test_kopie_in_roamcam_is_gelijk(self):
+    Er wordt op twee manieren gekeken. De werkmap alleen is niet genoeg: dat liet ons een kopie
+    pushen die achterliep, omdat de werkmap wel klopte en de commit niet.
+    """
+
+    def _paden(self):
         hier = os.path.dirname(os.path.abspath(__file__))
         bron = os.path.join(hier, "roamcam_core.py")
-        kopie = os.path.abspath(os.path.join(hier, "..", "..", "..", "roamcam", "roamcam_core.py"))
+        repo = os.path.abspath(os.path.join(hier, "..", "..", "..", "roamcam"))
+        return bron, repo, os.path.join(repo, "roamcam_core.py")
+
+    def test_kopie_in_werkmap_is_gelijk(self):
+        bron, repo, kopie = self._paden()
         if not os.path.exists(kopie):
             self.skipTest("repo roamcam staat niet naast deze; kopie niet te controleren")
         with open(bron, "rb") as f:
             a = f.read()
         with open(kopie, "rb") as f:
             b = f.read()
-        self.assertEqual(a, b, "roamcam/roamcam_core.py loopt uit de pas met de bron in "
-                               "roamcam-lab/roles/core/ -- kopieer hem opnieuw")
+        self.assertEqual(a, b, "roamcam/roamcam_core.py (werkmap) loopt uit de pas met de bron")
+
+    def test_kopie_in_git_is_gelijk(self):
+        # wat er GECOMMIT is, niet wat er toevallig in de werkmap staat
+        bron, repo, kopie = self._paden()
+        if not os.path.isdir(os.path.join(repo, ".git")):
+            self.skipTest("repo roamcam staat niet naast deze")
+        try:
+            r = subprocess.run(["git", "show", "HEAD:roamcam_core.py"], cwd=repo,
+                               capture_output=True, timeout=20)
+        except Exception:
+            self.skipTest("git niet beschikbaar")
+        if r.returncode != 0:
+            self.skipTest("roamcam_core.py staat niet in HEAD van roamcam")
+        with open(bron, "rb") as f:
+            a = f.read()
+        self.assertEqual(a, r.stdout, "de GECOMMITTE kopie in roamcam loopt achter: commit hem")
 
 
 if __name__ == "__main__":
